@@ -1,138 +1,94 @@
 # smol-factory
 
-A local PR assessment tool for agent harnesses, with a terminal view for
-maintainer decisions. The harness coordinates work; smol retains evidence,
-checks revisions, and enforces approval gates. Built with TypeScript and Effect.
-GitHub access is read-only. Classification, review, and verification each stop
-for an explicit maintainer decision.
-
-## Install the local prototype
-
-From this source checkout (Bun required):
-
-```sh
-bun install --frozen-lockfile
-mkdir -p ~/.local/bin
-ln -s "$PWD/scripts/smol.ts" ~/.local/bin/smol
-smol skill install --global
+```text
+                         ┌──┐   ┌──┐
+                         │  │   │  │
+                 ┌───────┘  └───┘  └─┐
+                 │   s m o l         │
+                 │       f a c t o r y│
+                 └───────────────────┘
 ```
 
-Ensure `~/.local/bin` is on your `PATH`. The symlink exposes the executable from
-this checkout; `bun link` alone only registers the package for linking into other
-projects. Skill installation writes
-`~/.agents/skills/smol-factory/SKILL.md` and preserves customized existing skills.
-Use an agent that discovers `.agents/skills`; refresh its skill discovery or start
-an agent session after installation. No registry publication is required.
+A terminal-based PR assessment tool that keeps maintainer decisions in your hands.
 
-For development, `bun run smol --help` runs the same CLI without linking.
-A distributable local archive can be produced with `bun pm pack`; it includes
-code, UI, schemas and the skill, not this checkout's repository policy or state.
+![smol-factory terminal demo showing the PR queue, assessment stages, and a pending maintainer decision](docs/smol-factory.svg)
 
-## Start inside your repository
+---
+
+Every repository has its own idea of a useful contribution. smol-factory lets you
+write that down and have agents classify, review, and verify incoming PRs, with
+your approval between stages.
+
+You start in the repository you maintain:
 
 ```sh
-cd /path/to/your-repository
+cd /path/to/your-repo
 smol
 ```
 
-The terminal opens in a dedicated onboarding state for an unconfigured repository.
-Install the repository skill there, then open a coding agent that discovers
-`.agents/skills` in the same repository and ask:
-**“Use the smol-factory skill to set up this repository.”** The agent checks whether
-`.smol-factory/smol-factory.json` exists, initializes it if needed, inspects the repository, drafts
-policy, validates it, and checks readiness. Return to the TUI and refresh.
-Configured repositories can open the PR queue without setup acceptance.
+Install the skill from the onboarding screen, then open your coding agent in the
+same repository and ask:
 
-Alternatively, use the CLI and skill directly:
-
-```sh
-smol init                              # infer GitHub identity from origin
-smol inspect                           # committed source + bounded PR history
-smol validate
-smol doctor
+```text
+Use the smol-factory skill to set up this repository.
 ```
 
-If identity is ambiguous, use `smol init --repository owner/repository`.
-Use `smol inspect --local-only` when GitHub is unavailable, or
-`--history-limit 1..30` to change the sample budget (default 12 PRs).
-Use `--root PATH` from elsewhere. Commands also discover the root from nested
-repository directories. Running init twice preserves existing configuration.
+The agent inspects committed source and recent PR history, drafts repository
+context and assessment rules, and checks the configuration. Those rules live in
+`.smol-factory/` as editable Markdown and JSON.
 
-Init creates editable configuration. The agent tailors classification, review and
-verification to repository evidence, then runs `smol validate` and `smol doctor`.
-No setup acceptance step. Its brief summary explains what smol-factory does, how
-it will assess this repo, and the next action: resolve a blocker or scan and classify PRs.
-Uncertain policy stays unresolved; historical outcomes do not establish exclusions.
+Then ask your agent to scan and classify incoming PRs:
 
-Doctor checks configuration, runtime settings and GitHub access without executing
-repository code or the adapter. Verification services still need repository-specific
-configuration. Setup does not start a scan or approve any PR gate.
-
-## Operate
-
-`smol` or `smol tui` opens the assessment view. Pending approvals and blocked
-findings sort first. The overview leads with the next decision, the relevant
-assessment, findings and decisive evidence. `[a]` inspects a maintainer decision;
-`[2]` shows full evidence across stages. Enter confirms the named action;
-Escape cancels. Runtime models and paths live in Artifacts.
-
-Execution shortcuts remain under `[?]`: `[o]` opens setup, `[s]` proposes a scan,
-`[c]` proposes classification of the latest scan, and `[x]` launches an already
-approved stage. Approval and launch remain separate.
-Blocked outcomes require a reason through the CLI. The demo remains nonmutating:
-`bun run tui:demo`.
-
-Agents use the same operations through the CLI:
-
-```sh
-smol scan
-smol classify RUN_ID
-smol status
-smol approve NUMBER classification --statement 'Review this PR'
-smol launch NUMBER review
-smol approve NUMBER review --statement 'Verify this PR'
-smol launch NUMBER verification
-smol approve NUMBER verification --statement 'Accept these findings'
+```text
+Scan open PRs and classify them using this repository's smol-factory policy.
 ```
 
-`smol status` returns the version 1 [assessment contract](assessment-contract.md).
-It includes full findings, approval records, revision fingerprints, counts, and
-an explicit next actor/action. The CLI, terminal view and Markdown reports use
-the same assessment projection. Status reads local files; it does not verify
-upstream freshness or runtime capacity.
+Open `smol` to read the findings and decide what moves forward. Classification
+checks product fit, review inspects code, and verification runs the approved
+checks. Each stage keeps its evidence locally and waits for a maintainer decision.
 
-Init saves Codex runtime defaults; they can be changed in the ignored personal config. See
-[configuration.md](configuration.md). Findings never grant approval. A maintainer
-can record an override with `decide NUMBER GATE --reason '...'`, then separately
-approve. `finish NUMBER GATE RESULT_JSON` records a running stage result.
-Assessment reports and the TUI Overview lead with compact summaries for each
-stage: outcome, reason and limits, decisive evidence, and the pending action.
-Full findings and evidence remain available below the Markdown summaries and in
-the TUI Evidence tab; history preserves prior events. Agent summaries target
-80–150 words, with exceptions for complex changes.
+## Features
 
-Revision checks apply to all transitions. Nothing merges, posts, repairs code,
-or automatically advances the next stage. Retain workspaces until explicit cleanup.
+- A keyboard-first terminal UI with the PR queue, pending decisions, findings, and evidence.
+- Repository-specific classification, review, and verification rules in Markdown.
+- Explicit maintainer approval between stages, tied to the assessed revision and policy.
+- Revision checks that invalidate stale assessments when a PR or its policy changes.
+- Local reports, approval history, and retained workspaces for following up on findings.
+- A CLI for agent harnesses, with the same assessment state used by the terminal UI.
+- A bundled Codex adapter with per-stage model settings and concurrency limits.
+- Read-only GitHub access. No automatic merges, comments, or contributor code repairs.
 
-## Repository files
+> [!NOTE]
+> smol-factory is an early local tool. The bundled agent adapter uses Codex and
+> GitHub is the PR source. Contributor code runs only during approved verification.
 
-- `.smol-factory/smol-factory.json`: versioned repository identity, scan settings and skill paths.
-- `.smol-factory/context.md` and `.smol-factory/skills/`: maintained repository policy.
-- `.smol-factory/local/`: ignored adapter, models and personal environment settings.
-- `.smol-factory/.runtime/`: ignored state, evidence, prompts, locks and thread handles.
-- `.smol-factory/assessments/` and `.smol-factory/scans/`: ignored assessment reports.
-- `.agents/skills/smol-factory/`: repository skill installed with your permission during onboarding, or with `smol skill install`.
+## Run
 
-Personal files and artifacts from earlier prototypes are not migrated or deleted.
+Install [Bun](https://bun.sh), [Git](https://git-scm.com), and the
+[GitHub CLI](https://cli.github.com). Authenticate `gh` for the repositories you
+want to assess. The bundled adapter also needs an installed, authenticated Codex CLI.
+The development Bun version is pinned in [.bun-version](.bun-version).
 
-## Development
+Install directly from GitHub:
 
 ```sh
-bun run test
-bun run typecheck
-bun run smol validate
+bun install -g github:peelar/smol-factory
 ```
 
-No target-repository code executes during onboarding, classification or review.
-Tests use isolated fixtures and mocked GitHub calls. Terminal rendering tests
-capture frames under ignored `.runtime/tui-preview/`.
+Run `smol` inside the repository you want to assess. If your shell cannot find it,
+add Bun's global bin directory (`bun pm bin -g`) to your `PATH`.
+
+Onboarding installs the repository skill. To also make it available globally:
+
+```sh
+smol skill install --global
+```
+
+Use a coding agent that discovers `.agents/skills`; refresh its skill discovery or
+start a new session after installation.
+
+See the [usage guide](docs/usage.md) for CLI commands and development checks,
+[configuration](configuration.md) for runtime settings, and the
+[assessment contract](assessment-contract.md) for structured results.
+
+[MIT license](LICENSE)

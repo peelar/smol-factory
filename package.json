@@ -1,5 +1,14 @@
 {
   "name": "smol-factory",
+  "license": "MIT",
+  "description": "Terminal-based PR assessment with repository-specific agent rules and explicit maintainer approvals.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/peelar/smol-factory.git"
+  },
+  "homepage": "https://github.com/peelar/smol-factory#readme",
+  "bugs": "https://github.com/peelar/smol-factory/issues",
+  "packageManager": "bun@1.4.2",
   "private": true,
   "type": "module",
   "scripts": {
@@ -33,6 +42,10 @@
     "scripts",
     "skills/smol-factory",
     "tui",
+    "docs",
+    ".bun-version",
+    "AGENTS.md",
+    "LICENSE",
     "README.md",
     "configuration.md",
     "assessment-contract.md",
