@@ -19,7 +19,14 @@ Every repository has its own idea of a useful contribution. smol-factory lets yo
 write that down and have agents classify, review, and verify incoming PRs, with
 your approval between stages.
 
-You start in the repository you maintain:
+Install the package from GitHub with [Bun](https://bun.sh)
+(see [prerequisites](#run) below):
+
+```sh
+bun install -g github:peelar/smol-factory
+```
+
+Then start in the repository you maintain:
 
 ```sh
 cd /path/to/your-repo
