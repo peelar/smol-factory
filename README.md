@@ -58,7 +58,4 @@ for approval by default.
 > grant matching the operation, conditions and effects; successful runs cannot grant it.
 > Policy is agent guidance, not a security boundary or enforcement mechanism.
 
-Inspired by [Matt Pocock's skills](https://github.com/mattpocock/skills)
-and [Lauren's pstack](https://github.com/cursor/plugins/tree/main/pstack).
-
 [MIT license](LICENSE)
