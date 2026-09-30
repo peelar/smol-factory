@@ -1,4 +1,5 @@
 local/
+/.smol-factory/local/
 .runtime/
 assessments/
 scans/

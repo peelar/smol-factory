@@ -1,103 +1,113 @@
 # smol-factory
 
-```text
-                         ┌──┐   ┌──┐
-                         │  │   │  │
-                 ┌───────┘  └───┘  └─┐
-                 │      s m o l      │
-                 │   f a c t o r y   │
-                 └───────────────────┘
-```
+Skills for establishing a repository's issue and PR workflow. An agent learns
+how the project handles contributions, proposes stages and typed policy, then
+uses GitHub labels to communicate approved workflow status.
 
-An agent-led issue and PR assessment framework with a terminal view and explicit maintainer decisions.
+## Establish a factory
 
-![smol-factory terminal demo showing the PR queue, assessment stages, and a pending maintainer decision](docs/smol-factory.svg)
-
----
-
-Every repository has its own idea of a useful contribution. smol-factory lets you
-write that down and have agents classify, review, and verify incoming PRs, with
-your approval between stages.
-
-Install the package from GitHub with [Bun](https://bun.sh)
-(see [prerequisites](#run) below):
-
-```sh
-bun install -g github:peelar/smol-factory
-```
-
-Then start in the repository you maintain:
-
-```sh
-cd /path/to/your-repo
-smol
-```
-
-Install the skill from the onboarding screen, then open your coding agent in the
-same repository and ask:
+Point your agent at the bootstrap skill and the repository you maintain:
 
 ```text
-Use the smol-factory skill to set up this repository.
+Read https://github.com/peelar/smol-factory/blob/main/skills/smol-factory/SKILL.md
+and establish the factory in /path/to/my-repository.
 ```
 
-The agent inspects committed source and recent PR history, drafts repository
-context and assessment rules, and checks the configuration. Those rules live in
-`.smol-factory/` as editable Markdown and JSON.
+A GitHub repository URL also works as the target; the agent resolves its local
+checkout with you. It reads the skill and its assets from one source revision,
+inspects the target's documents, code and issue/PR history, and presents a concrete
+configuration for acceptance. The base experience requires no package, CLI or
+global skill installation.
 
-Then ask your agent to scan and classify incoming PRs:
+Onboarding creates the repository's foundations and two local skills:
 
 ```text
-Scan open PRs and classify them using this repository's smol-factory policy.
+.agents/skills/
+  scan-issues/SKILL.md
+  scan-prs/SKILL.md
+.smol-factory/
+  policy.ts
+  policy.types.ts
+  records.types.ts
+  context.md
+  operations.md
+  records.md
+  understanding.template.md
+  stages/
+    validate.md
+    classify.md
+    review.md
+    verify.md
+    ready.md
+  local/                    ignored: environment and item memory
 ```
 
-Open `smol` to read the findings and decide what moves forward. Classification
-checks product fit, review inspects code, and verification runs the approved
-checks. Each stage keeps its evidence locally and waits for a maintainer decision.
+Then ask your agent to use **scan-issues** or **scan-prs**. Both can scan a batch or
+work on a named item. They resume actionable work before admitting new submissions
+and run entirely from the target repository's local foundations. If your agent
+does not discover `.agents/skills`, ask it to read the corresponding `SKILL.md`
+directly. To revise the factory later, read the bootstrap skill again.
 
-## Features
+## Repository policy
 
-- A keyboard-first terminal UI that pages through open issues and PRs and shows local workflow progress beside each item.
-- Repository-specific classification, review, and verification rules in Markdown.
-- Explicit maintainer approval between stages, tied to the assessed revision and policy.
-- Revision checks that invalidate stale assessments when a PR or its policy changes.
-- Local reports, approval history, and retained workspaces for following up on findings.
-- A CLI for agent harnesses, with the same assessment state used by the terminal UI.
-- A bundled Codex adapter with per-stage model settings and concurrency limits.
-- Agent-led issue/PR scans, exact action proposals, and explicitly approved GitHub writes. No automatic merges or contributor code repairs.
+[`policy.ts`](skills/smol-factory/assets/foundation/policy.ts) is a declarative
+TypeScript configuration checked against
+[`FactoryPolicy`](skills/smol-factory/assets/foundation/policy.types.ts).
+It contains permissions, requirements, transitions, references, labels, intake,
+worker limits and verification scope. Markdown supplies context, preferences and
+assessment guidance. Every stage reads its assigned references.
 
-> [!NOTE]
-> smol-factory is an early local tool. The bundled agent adapter uses Codex and
-> GitHub is the PR source. Contributor code runs only during approved verification.
+Defaults are a proposal, tailored during onboarding:
 
-## Run
+| | Stages |
+| --- | --- |
+| Issues | Validate → classify → verify when needed → ready to be worked on |
+| PRs | Validate → classify → review → verify → ready for maintainer acceptance |
 
-Install [Bun](https://bun.sh), [Git](https://git-scm.com), and the
-[GitHub CLI](https://cli.github.com). Authenticate `gh` for the repositories you
-want to assess. The bundled adapter also needs an installed, authenticated Codex CLI.
-The development Bun version is pinned in [.bun-version](.bun-version).
+Start with 10 items per scan, at most 3 workers, 1 code reviewer and 1 verification
+environment concurrently. Assessment favors economical available models; review
+favors deeper reasoning. Without delegation, work runs serially. Team submissions
+and draft PRs are included; repository-specific exclusions are explicit.
 
-Install directly from GitHub:
+The maintainer can redefine stages, references, limits and rules. For example,
+requiring a linked issue belongs in that repository's typed requirements, not the
+base skill. Historical decisions inform proposed rules; they do not automatically
+become policy. Verification names commands, environment prerequisites, observed
+software versions and cleanup. Code runs only in permitted verification.
 
-```sh
-bun install -g github:peelar/smol-factory
-```
+## Public actions and memory
 
-Run `smol` inside the repository you want to assess. If your shell cannot find it,
-add Bun's global bin directory (`bun pm bin -g`) to your `PATH`.
+**Every GitHub write starts with `requireApproval`**, including labels, comments,
+closure, reviews and merges. The agent shows exact proposed actions and wording
+before acting. Accepting local setup does not approve label creation or any other
+GitHub change. Later autonomy requires explicit grants for particular operations,
+conditions and effects; successful assessments cannot grant it automatically.
 
-Onboarding installs the repository skill. To also make it available globally:
+Typed policy makes instructions precise. It is **agent guidance, not a security
+boundary**: there is no write broker, custom executor or guarantee against an agent
+bypassing instructions. Agents use ordinary GitHub tools and confront their
+actions with the accepted policy.
 
-```sh
-smol skill install --global
-```
+Each issue/PR has a structured local record and `understanding.md`: intent,
+evidence, hypotheses, related history, checks, versions, questions and next steps.
+Approved GitHub summaries carry shareable understanding across checkouts. Changed
+submissions, policy or environments invalidate affected results and proposals;
+earlier evidence remains history. Proposed labels are distinct from public writes
+that actually succeeded.
 
-Use a coding agent that discovers `.agents/skills`; refresh its skill discovery or
-start a new session after installation.
+## Work on these skills
 
-See the [usage guide](docs/usage.md) for CLI commands and development checks,
-[configuration](configuration.md) for runtime settings, and the
-[assessment contract](assessment-contract.md) for structured results.
+The bootstrap and its supporting documents live in
+[`skills/smol-factory/`](skills/smol-factory/SKILL.md). Local scan skills and
+foundation files are assets copied and tailored during onboarding. There is no
+application runtime or dependency installation for this repository.
+
+Check skill frontmatter, links, the onboarding copy map and typed assets when
+changing them. Use a trusted TypeScript compiler if already available; source-only
+validation does not execute the target project's code. Test substantial workflow
+changes with an isolated onboarding/scan scenario before publishing.
+
+The structure draws on [Matt Pocock's skills](https://github.com/mattpocock/skills)
+and [Lauren's pstack](https://github.com/cursor/plugins/tree/main/pstack).
 
 [MIT license](LICENSE)
-
-See [agent-led scans and approved GitHub actions](docs/issue-workflow.md) for repository scan skills and proposal approvals.
