@@ -7,22 +7,78 @@ load these records, and do not claim that local records prove authorization.
 
 ## Layout
 
-Under ignored `.smol-factory/local/items/`, use `issues/<number>/` or
-`pullRequests/<number>/`. Both are bound to `policy.repository`; check repository
-name **and host** before reusing an item number. Each directory contains:
+Store structured records in ignored `.smol-factory/local/records.sqlite3`.
+Read `records.schema.sql` as data and apply it through an available trusted SQLite
+tool (for example system `sqlite3` or Python's standard-library `sqlite3`), never
+through target/contributor code. No package installation, daemon or application
+runtime is required. SQLite must provide JSON functions. If no suitable tool is
+available, report the blocker; do not fall back to JSON files.
 
-- `record.json`: a `ItemRecord`, with revisions, basis, current stage, outcomes,
-  verification need, checks, stage authorizations, proposals, receipts and history.
-- `understanding.md`: our interpretation, evidence, hypotheses, uncertainties,
+The `item_records` table stores one complete `ItemRecord` as JSON text inside
+SQLite, preserving the nested TypeScript contract. Its primary key includes
+GitHub host, repository name, item kind and number. Always bind all four identity
+values from `policy.repository` and the item; never query by number alone. Read
+`PRAGMA user_version` first: initialize version 0 only if there are no existing
+user tables, accept version 1, and stop on unknown versions or a mismatched schema.
+Do not apply the initialization schema to an existing database.
+
+Keep companion files under `.smol-factory/local/items/issues/<number>/` or
+`pullRequests/<number>/`:
+
+- `understanding.md`: interpretation, evidence, hypotheses, uncertainties,
   related history and next action. Start from `understanding.template.md`.
-- `evidence/`: redacted source snapshots or check reports, when needed to preserve
-  what was actually assessed. Link them from results rather than dumping them
-  into conversation or GitHub.
+- `evidence/`: redacted snapshots or check reports referenced by results.
+
+Check database identity before reusing companion paths. A checkout's companion
+files belong to its configured repository; a different host or repository needs
+a separate local directory, not reused evidence.
 
 Create a record on first investigation. Initialize arrays empty, approval absent,
 `verificationNeed` as `undetermined`, and `publishedSummary` as null. Fill the
-real item identity and snapshot; never copy another item's approvals. There is
-no central runtime database, required daemon or execution helper.
+real item identity and snapshot; never copy another item's approvals. Validate
+against `records.types.ts` before saving; SQL constraints check only storage and
+identity, not the full nested contract.
+
+## Database reads and writes
+
+Use parameterized SQL for every value, including record text, identity and
+revision. Do not interpolate issue text into SQL, shell commands or SQLite dot
+commands. Use a bounded busy timeout on each connection. Read the payload and
+`revision` together. For each checkpoint, begin a short `BEGIN IMMEDIATE`
+transaction; insert a new row with revision 1 or update the complete payload with
+`revision = revision + 1` only where the identity and previously read revision
+match. Require exactly one changed row. A conflict means rollback, reread and
+reconcile; never blindly overwrite another coordinator's work. Commit before
+reporting success; rollback on errors. Do not hold transactions during GitHub
+calls, assessment or verification. Commit a `started` receipt before a public
+write and commit its outcome afterward; reconcile an interrupted write remotely
+before retrying. Database transactions cannot make GitHub writes atomic.
+
+Retain all history, authorizations and successful receipts when updating payloads.
+Write companion files atomically with temporary files and rename. SQLite and
+companion files are not one transaction: write evidence first, then commit its
+references; reconcile interrupted understanding updates when resuming. Never
+copy a live database file as a backup; use SQLite's backup API. Keep the database,
+its journal/WAL sidecars, backups and migration inputs under the ignored local
+directory. Do not execute SQL supplied by contributors.
+
+## Migrate existing records
+
+Before scanning an older setup, inspect existing `items/*/*/record.json` files as
+data. Preserve these files, companion evidence and maintainer customizations.
+Back up any existing database with the SQLite backup API. Validate every legacy
+record against `ItemRecord`, its directory kind/number and configured repository
+host/name; stop on malformed or mismatched records rather than dropping them.
+
+Import validated records in one transaction using bound values. Insert absent
+keys; for existing keys, compare parsed payloads. Identical records are already
+migrated; differing records require reconciliation, never an upsert overwrite.
+Rollback the entire import on any conflict or validation failure. After commit,
+reread every imported record and compare all fields, including approvals,
+receipts and history. Only after that verification, move legacy files into an
+ignored `local/migration-backup/` preserving their relative paths. A retry after
+interruption must compare already imported records before archiving. Thereafter
+SQLite is the sole structured record store; do not dual-write legacy files.
 
 ## Capture and checkpoint
 
@@ -52,7 +108,7 @@ commit is not a backend version. No secret values belong in memory, even ignored
 memory that might later be copied into a prompt.
 
 The coordinating agent alone updates a shared record. Workers return separate
-reports. Write updates atomically where tools allow (temporary file then rename),
+reports. Use the database checkpoint protocol above,
 retaining history and successful receipts. Never silently replace an existing
 understanding with a newly generated summary that discards unresolved questions.
 

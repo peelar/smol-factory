@@ -90,6 +90,7 @@ destination paths are relative to the **target repository root**.
 | --- | --- |
 | `assets/foundation/policy.types.ts` | `.smol-factory/policy.types.ts` |
 | `assets/foundation/policy.ts` | `.smol-factory/policy.ts` |
+| `assets/foundation/records.schema.sql` | `.smol-factory/records.schema.sql` |
 | `assets/foundation/records.types.ts` | `.smol-factory/records.types.ts` |
 | `assets/foundation/context.md` | `.smol-factory/context.md` |
 | `assets/foundation/operations.md` | `.smol-factory/operations.md` |
@@ -138,6 +139,10 @@ explicit executable path if the name is used by another tool. Do not install
 dependencies just for onboarding. If unavailable, inspect types
 and report that compiler validation was not run. The compiler is an optional
 validation tool, not a factory runtime.
+
+Confirm the copied SQLite schema and record instructions are present. Initialize
+local storage only after the ignore rule exists, following `records.md`; migrate
+legacy records without discarding evidence or customizations.
 
 Also check what types cannot establish: positive limits/timeouts; unique IDs;
 known stage/requirement/environment/command/template references; reachable stages

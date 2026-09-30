@@ -17,6 +17,9 @@ Read every reference assigned to each stage before performing it. Typed policy
 defines permission; Markdown explains assessment. Policy is guidance, not a
 tool-access sandbox.
 
+Use the SQLite store and migration/checkpoint protocol in the configured records
+document; preserve companion understanding and evidence files.
+
 Resume actionable item memory first, then admit new open issues within the batch
 limit. Exclude PRs from issue queries. Apply explicit request filters and policy
 exclusions. For a specified issue, use the same process with one item. Read full

@@ -29,6 +29,7 @@ Onboarding creates the repository's foundations and two local skills:
   policy.ts
   policy.types.ts
   records.types.ts
+  records.schema.sql
   context.md
   operations.md
   records.md
@@ -88,7 +89,11 @@ boundary**: there is no write broker, custom executor or guarantee against an ag
 bypassing instructions. Agents use ordinary GitHub tools and confront their
 actions with the accepted policy.
 
-Each issue/PR has a structured local record and `understanding.md`: intent,
+Structured item records live in ignored `.smol-factory/local/records.sqlite3`,
+accessed with an available SQLite tool; no dependency install is needed. The
+database preserves nested typed records, revisions and transactional checkpoints.
+Existing JSON files are imported and verified before being archived locally.
+Each issue/PR also has `understanding.md`: intent,
 evidence, hypotheses, related history, checks, versions, questions and next steps.
 Approved GitHub summaries carry shareable understanding across checkouts. Changed
 submissions, policy or environments invalidate affected results and proposals;
