@@ -2,11 +2,23 @@ import { Effect, FileSystem, Schema } from "effect";
 import { BunServices } from "@effect/platform-bun";
 import { join } from "node:path";
 import { readSchema } from "../src/io";
+import { issueRunSchema } from "../src/issue-runs";
+import { proposalSchema } from "../src/workflow";
 import { manifestSchema } from "../src/schema";
 import { gates, prSchema, type PullRequest, type Snapshot } from "./model";
 
 const configSchema = Schema.Struct({
   models: Schema.Record(Schema.String, Schema.Struct({ model: Schema.String })),
+});
+const collectedSchema = Schema.Struct({
+  items: Schema.Array(
+    Schema.Struct({
+      target: Schema.Struct({
+        kind: Schema.Literals(["issue", "pr"]),
+        number: Schema.Number,
+      }),
+    }),
+  ),
 });
 const entries = (path: string) =>
   Effect.gen(function* () {
@@ -57,6 +69,7 @@ export function createSnapshotSource(root: string) {
           ),
         );
       }
+      snapshot.scanRuns = [];
       for (const scan of (yield* entries(join(root, ".runtime/scans")))
         .sort()
         .reverse()) {
@@ -65,8 +78,13 @@ export function createSnapshotSource(root: string) {
           manifestSchema,
         ).pipe(Effect.catch(() => Effect.succeed(undefined)));
         if (manifest) {
-          snapshot.latestScan = manifest;
-          break;
+          snapshot.scanRuns.push({
+            id: manifest.id,
+            prs: manifest.prs,
+            pending: manifest.pending ?? [],
+          });
+          snapshot.latestScan ??= manifest;
+          continue;
         }
         snapshot.warnings.push(
           `Scan ${scan}: incomplete (manifest unavailable).`,
@@ -85,6 +103,39 @@ export function createSnapshotSource(root: string) {
           }),
         ),
       );
+      snapshot.issueRuns = [];
+      for (const name of (yield* entries(
+        join(root, ".runtime/issue-runs"),
+      )).filter((n) => n.endsWith(".json"))) {
+        const run = yield* readSchema(
+          join(root, ".runtime/issue-runs", name),
+          issueRunSchema,
+        ).pipe(Effect.catch(() => Effect.succeed(undefined)));
+        if (run) snapshot.issueRuns.push(run);
+        else snapshot.warnings.push(`Issue run ${name}: unreadable state.`);
+      }
+      snapshot.proposals = [];
+      snapshot.collected = [];
+      for (const name of (yield* entries(
+        join(root, ".runtime/work-scans"),
+      )).filter((n) => n.endsWith(".json"))) {
+        const scan = yield* readSchema(
+          join(root, ".runtime/work-scans", name),
+          collectedSchema,
+        ).pipe(Effect.catch(() => Effect.succeed(undefined)));
+        if (scan)
+          snapshot.collected.push(...scan.items.map((item) => item.target));
+      }
+      for (const name of (yield* entries(
+        join(root, ".runtime/proposals"),
+      )).filter((n) => n.endsWith(".json"))) {
+        const proposal = yield* readSchema(
+          join(root, ".runtime/proposals", name),
+          proposalSchema,
+        ).pipe(Effect.catch(() => Effect.succeed(undefined)));
+        if (proposal) snapshot.proposals.push(proposal);
+        else snapshot.warnings.push(`Proposal ${name}: unreadable state.`);
+      }
       return snapshot;
     });
 }

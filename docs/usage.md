@@ -2,7 +2,8 @@
 
 Local PR assessment for agent harnesses, with a terminal view for maintainer
 decisions. The harness coordinates work; smol retains evidence, checks revisions,
-and enforces approval gates. Built with TypeScript and Effect. GitHub is read-only;
+and enforces approval gates. Built with TypeScript and Effect. GitHub writes require
+explicit approval of exact proposals;
 classification, review, and verification each require an explicit maintainer decision.
 
 ## Install
@@ -34,8 +35,8 @@ Unconfigured repositories open onboarding. Install the repository skill there,
 then open a coding agent that discovers `.agents/skills` in the same repository:
 **“Use the smol-factory skill to set up this repository.”** The agent initializes
 missing configuration, inspects the repository, drafts policy, validates it, and
-checks readiness. Refresh the TUI afterward. Configured repositories open the PR
-queue without setup acceptance.
+checks readiness. Refresh the TUI afterward. Configured repositories open the
+GitHub PR browser without setup acceptance.
 
 Or use the CLI and skill directly:
 
@@ -62,14 +63,16 @@ configuration. Setup neither starts a scan nor approves PR gates.
 
 ## Operate
 
-`smol` or `smol tui` opens assessments, with pending approvals and blocked findings
-first. The overview shows the next decision, assessment, findings and decisive
-evidence. `[a]` inspects a maintainer decision; `[2]` shows full stage evidence.
-Enter confirms the named action; Escape cancels. Artifacts holds runtime models
-and paths.
+`smol` or `smol tui` opens 20 open PRs from GitHub. Tab switches between PRs and
+issues; `[` and `]` move between pages. Each item shows its saved assessment or
+proposal progress. Items without local work show Idle. `[a]` inspects a pending
+maintainer decision. Selecting a PR loads its description and changed file patches
+in the detail pane. Classification is available after that preview loads and is
+bound to the revision shown. Right focuses the content pane for scrolling; Left
+returns to the list. Enter confirms the named action; Escape cancels.
 
-Shortcuts under `[?]`: `[o]` opens setup, `[s]` proposes a scan, `[c]` proposes
-classification of the latest scan, and `[x]` launches an approved stage.
+Shortcuts under `[?]`: `[o]` opens setup, `[r]` refreshes the current GitHub page,
+and `[x]` launches an approved stage.
 Approval and launch are separate. Blocked outcomes require a reason through the
 CLI. In a source checkout, `bun run tui:demo` runs a nonmutating demo.
 
@@ -139,3 +142,5 @@ macOS ARM64 with Bun 1.4.2. Linux awaits its first hosted CI run; Windows is unv
 Onboarding, classification and review never execute target-repository code.
 Tests use isolated fixtures and mocked GitHub calls. Terminal tests capture
 frames in ignored `.runtime/tui-preview/`.
+
+For agent-led issue/PR scanning, repository setup skills, and approved mutations, see [the workflow contract](issue-workflow.md) or run `smol workflow-help`.

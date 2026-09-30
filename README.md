@@ -9,7 +9,7 @@
                  └───────────────────┘
 ```
 
-A terminal-based PR assessment tool that keeps maintainer decisions in your hands.
+An agent-led issue and PR assessment framework with a terminal view and explicit maintainer decisions.
 
 ![smol-factory terminal demo showing the PR queue, assessment stages, and a pending maintainer decision](docs/smol-factory.svg)
 
@@ -56,14 +56,14 @@ checks. Each stage keeps its evidence locally and waits for a maintainer decisio
 
 ## Features
 
-- A keyboard-first terminal UI with the PR queue, pending decisions, findings, and evidence.
+- A keyboard-first terminal UI that pages through open issues and PRs and shows local workflow progress beside each item.
 - Repository-specific classification, review, and verification rules in Markdown.
 - Explicit maintainer approval between stages, tied to the assessed revision and policy.
 - Revision checks that invalidate stale assessments when a PR or its policy changes.
 - Local reports, approval history, and retained workspaces for following up on findings.
 - A CLI for agent harnesses, with the same assessment state used by the terminal UI.
 - A bundled Codex adapter with per-stage model settings and concurrency limits.
-- Read-only GitHub access. No automatic merges, comments, or contributor code repairs.
+- Agent-led issue/PR scans, exact action proposals, and explicitly approved GitHub writes. No automatic merges or contributor code repairs.
 
 > [!NOTE]
 > smol-factory is an early local tool. The bundled agent adapter uses Codex and
@@ -99,3 +99,5 @@ See the [usage guide](docs/usage.md) for CLI commands and development checks,
 [assessment contract](assessment-contract.md) for structured results.
 
 [MIT license](LICENSE)
+
+See [agent-led scans and approved GitHub actions](docs/issue-workflow.md) for repository scan skills and proposal approvals.

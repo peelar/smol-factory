@@ -13,11 +13,121 @@ export {
 } from "../src/assessment";
 import { gates, type Gate, type PullRequest } from "../src/schema";
 export { gates, prSchema, type Gate, type PullRequest } from "../src/schema";
+import type { IssueRun } from "../src/issue-runs";
+import type { Proposal } from "../src/workflow";
+import type { QueueAction } from "./actions";
 export interface Snapshot {
+  browse?: {
+    kind: "issue" | "pr";
+    page: number;
+    total: number;
+    items: { number: number; title: string; author: string; url: string }[];
+  };
+  proposals?: Proposal[];
+  issueRuns?: IssueRun[];
+  collected?: { kind: "issue" | "pr"; number: number }[];
+  scanRuns?: { id: string; prs: number[]; pending: number[] }[];
   prs: PullRequest[];
   warnings: string[];
   latestScan?: { id: string; created: string; prs: number[] };
   models: Partial<Record<Gate, string>>;
+}
+export interface PrPreview {
+  number: number;
+  head: string;
+  body: string;
+  files: { path: string; status: string; patch: string | null }[];
+}
+export function browsePrimary(
+  snapshot: Snapshot,
+  kind: "issue" | "pr",
+  number: number,
+  preview?: PrPreview,
+): {
+  title: string;
+  detail: string;
+  action?: QueueAction;
+} {
+  const classify = (again = false) =>
+    preview?.number === number
+      ? {
+          title: `${again ? "Reclassify" : "Classify"} PR #${number}?`,
+          detail:
+            "Classify the revision shown in the preview. GitHub evidence is checked again before the agent runs.",
+          action: {
+            kind: "classify-target" as const,
+            number,
+            head: preview.head,
+          },
+        }
+      : {
+          title: `Loading PR #${number}…`,
+          detail:
+            "Wait for the PR description and changed files before classifying.",
+        };
+  const pr =
+    kind === "pr"
+      ? snapshot.prs.find((item) => item.number === number)
+      : undefined;
+  if (pr) {
+    const next = assessment(pr).next;
+    if (next.action === "rescan") return classify(true);
+    if (next.action === "classify_scan") {
+      return classify();
+    }
+    const preview = previewAction(pr);
+    if (preview)
+      return {
+        ...preview,
+        action:
+          next.action === "approve" || next.action === "launch"
+            ? {
+                kind: next.action,
+                number,
+                gate: currentGate(pr),
+                fingerprint: pr.fingerprint,
+              }
+            : undefined,
+      };
+    return { title: `PR #${number}`, detail: next.reason };
+  }
+  const issueRun =
+    kind === "issue" ? latestIssueRun(snapshot, number) : undefined;
+  if (issueRun && issueRun.status !== "completed")
+    return {
+      title: `Issue #${number} · ${issueRun.stage} · ${issueRun.status}`,
+      detail: issueRun.events.at(-1)?.detail ?? "",
+    };
+  const entries = (snapshot.proposals ?? []).flatMap((proposal) =>
+    proposal.entries
+      .filter(
+        (entry) => entry.target.kind === kind && entry.target.number === number,
+      )
+      .map((entry) => ({ proposal, entry })),
+  );
+  if (entries.length)
+    return {
+      title: `Review proposals for ${kind} #${number}`,
+      detail:
+        "Review the exact actions with your agent. Approval must name selected entry IDs and record your actual instruction.",
+    };
+  if (
+    snapshot.collected?.some(
+      (item) => item.kind === kind && item.number === number,
+    )
+  )
+    return {
+      title: `${kind === "issue" ? "Issue" : "PR"} #${number} awaiting assessment`,
+      detail:
+        "Ask your agent to assess the saved evidence and prepare exact proposals.",
+    };
+  return kind === "pr"
+    ? classify()
+    : {
+        title: `Collect issue #${number}?`,
+        detail: "Capture this issue for agent assessment.",
+        action: { kind: "collect-issue", number },
+      };
 }
 export const visuals: Record<
   StageStatus,
@@ -42,10 +152,7 @@ export const filters = [
   "Latest scan",
 ] as const;
 export type Filter = (typeof filters)[number];
-export function selectPrs(
-  snapshot: Snapshot,
-  filter: Filter,
-): PullRequest[] {
+export function selectPrs(snapshot: Snapshot, filter: Filter): PullRequest[] {
   const rank: Record<StageStatus, number> = {
     passed: 0,
     decision: 1,
@@ -61,14 +168,14 @@ export function selectPrs(
     .filter((pr) => {
       const status = overall(pr);
       return (
-        (filter === "All PRs" ||
-          (filter === "Needs me" && assessment(pr).needs_maintainer) ||
-          (filter === "Running" && status === "running") ||
-          (filter === "Blocked" && status === "blocked") ||
-          (filter === "Completed" &&
-            pr.status === "ready_for_maintainer_review") ||
-          (filter === "Latest scan" &&
-            snapshot.latestScan?.prs.includes(pr.number)))
+        filter === "All PRs" ||
+        (filter === "Needs me" && assessment(pr).needs_maintainer) ||
+        (filter === "Running" && status === "running") ||
+        (filter === "Blocked" && status === "blocked") ||
+        (filter === "Completed" &&
+          pr.status === "ready_for_maintainer_review") ||
+        (filter === "Latest scan" &&
+          snapshot.latestScan?.prs.includes(pr.number))
       );
     })
     .sort((a, b) => rank[overall(a)] - rank[overall(b)] || b.number - a.number);
@@ -81,6 +188,8 @@ export function clean(text: string): string {
     .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
     .replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/g, "");
 }
+export const cleanMultiline = (value: string) =>
+  value.split(/\r?\n/).map(clean).join("\n");
 export function previewAction(
   pr: PullRequest,
 ): { title: string; detail: string } | undefined {
@@ -107,4 +216,13 @@ export function previewAction(
         "The preceding gate is approved. Would request this stage through the configured runtime, subject to revision and capacity checks.",
     };
   return undefined;
+}
+
+export function latestIssueRun(
+  snapshot: Snapshot,
+  number: number,
+): IssueRun | undefined {
+  return snapshot.issueRuns
+    ?.filter((run) => run.number === number)
+    .sort((a, b) => b.updated.localeCompare(a.updated))[0];
 }

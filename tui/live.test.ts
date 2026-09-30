@@ -2,7 +2,100 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { demoSnapshot } from "./demo";
-import { createLiveSource } from "./live";
+import {
+  createLiveSource,
+  createPrPreviewSource,
+  externalBrowsePage,
+} from "./live";
+
+test("selected PR content loads on demand and is cached", async () => {
+  const calls: number[] = [];
+  const load = createPrPreviewSource("unused", async (number) => {
+    calls.push(number);
+    return {
+      number,
+      head: `head-${number}`,
+      body: `Body ${number}`,
+      files: [{ path: "change.ts", status: "modified", patch: "+change" }],
+    };
+  });
+  expect((await load(4)).body).toBe("Body 4");
+  await load(4);
+  await load(5);
+  await load(4, true);
+  expect(calls).toEqual([4, 5, 4]);
+});
+
+test("Issues and PR pages exclude core members and keep external pagination dense", () => {
+  const items = Array.from({ length: 24 }, (_, index) => ({
+    number: index + 1,
+    title: `Item ${index + 1}`,
+    html_url: `https://example.test/items/${index + 1}`,
+    author_association: index === 0 ? "MEMBER" : "NONE",
+    user: {
+      login: index === 1 ? "CorePerson" : `outside-${index}`,
+      type: index === 2 ? "Bot" : "User",
+    },
+  }));
+  const first = externalBrowsePage("issue", 1, items, ["coreperson"]);
+  const second = externalBrowsePage("issue", 2, items, ["coreperson"]);
+  expect(first.total).toBe(21);
+  expect(first.items.map((item) => item.number)).toEqual(
+    Array.from({ length: 20 }, (_, index) => index + 4),
+  );
+  expect(second.items.map((item) => item.number)).toEqual([24]);
+  expect(
+    externalBrowsePage(
+      "pr",
+      1,
+      [
+        ...items,
+        {
+          ...items[3]!,
+          number: 25,
+          draft: true,
+        },
+      ],
+      ["coreperson"],
+    ).total,
+  ).toBe(21);
+});
+
+test("browser fetches a page once, changes pages, and refreshes on demand", async () => {
+  const parent = resolve(import.meta.dir, "../.runtime/tui-tests");
+  await mkdir(parent, { recursive: true });
+  const root = await mkdtemp(join(parent, "pages-"));
+  const calls: string[] = [];
+  const load = createLiveSource(
+    root,
+    async () => {
+      throw new Error("No saved PRs need metadata");
+    },
+    async (kind, page) => {
+      calls.push(`${kind}:${page}`);
+      return {
+        kind,
+        page,
+        total: 41,
+        items: [
+          {
+            number: page,
+            title: `${kind} ${page}`,
+            author: "author",
+            url: "https://example.test/item",
+          },
+        ],
+      };
+    },
+  );
+  expect((await load()).browse?.items[0]?.title).toBe("pr 1");
+  await load();
+  expect((await load(false, "issue", 2)).browse?.items[0]?.title).toBe(
+    "issue 2",
+  );
+  await load(true, "issue", 2);
+  expect(calls).toEqual(["pr:1", "issue:2", "issue:2"]);
+});
 
 test("live PR details join saved assessment by number without changing state", async () => {
   const parent = resolve(import.meta.dir, "../.runtime/tui-tests");

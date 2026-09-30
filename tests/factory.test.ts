@@ -12,6 +12,7 @@ import {
 } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { join, resolve, relative } from "node:path";
+import { Workflow } from "../src/workflow";
 import { Factory, canonical, digest } from "../src/factory";
 import {
   FactoryError,
@@ -542,6 +543,21 @@ test("TUI decisions reject a changed displayed assessment and approval does not 
   expect(calls.some((c) => c[0] === "test-adapter")).toBe(false);
 });
 
+test("TUI classification refuses a revision newer than the selected preview", async () => {
+  const { performAction } = await import("../tui/actions");
+  await expect(
+    run(
+      performAction(factory, {
+        kind: "classify-target",
+        number: 1,
+        head: "old-preview",
+      }),
+    ),
+  ).rejects.toThrow("changed since the preview");
+  expect((await run(factory.state(1))).status).toBe("awaiting_classification");
+  expect(calls.some((call) => call[0] === "test-adapter")).toBe(false);
+});
+
 test("assessment leads with current stages and retains every finding and evidence item", async () => {
   await run(
     factory.recordResult(value, "classification", {
@@ -615,4 +631,105 @@ test("live and unknown lock owners are preserved", async () => {
     "Cannot identify",
   );
   expect(await readFile(join(path, "owner.json"), "utf8")).toBe("{}");
+});
+
+test("agent can submit classification without launching an adapter", async () => {
+  const id = "agent-scan";
+  const file = join(root, "results.json");
+  await run(
+    writeJson(join(factory.storage, ".runtime/scans", id, "manifest.json"), {
+      id,
+      created: "2026-09-29",
+      prs: [1],
+      pending: [1],
+    }),
+  );
+  await run(writeJson(file, { results: [{ ...result(), number: 1 }] }));
+  await run(command(factory, ["assess", id, "--file", file]));
+  expect((await run(factory.state(1))).status).toBe(
+    "classification:awaiting_approval",
+  );
+  expect(calls.some((argv) => argv[0] === "test-adapter")).toBe(false);
+});
+
+test("agent-run review requires approval and can finish without an adapter", async () => {
+  await expect(run(command(factory, ["start", "1", "review"]))).rejects.toThrow(
+    "Missing explicit approval",
+  );
+  await ready();
+  const started = await run(command(factory, ["start", "1", "review"]));
+  expect(started).toHaveProperty("prompt_path");
+  expect((await run(factory.state(1))).status).toBe("running:review");
+  await run(factory.finish(1, "review", result()));
+  expect((await run(factory.state(1))).status).toBe("review:awaiting_approval");
+  expect(calls.some((argv) => argv[0] === "test-adapter")).toBe(false);
+});
+
+test("PR proposal advancement binds the submitted assessment and never publishes implicitly", async () => {
+  respond = (argv) => {
+    if (argv[1] === "pr" && argv[2] === "list") return json([{ number: 1 }]);
+    if (argv.at(-1)?.endsWith("/issues/1"))
+      return json({
+        number: 1,
+        title: pr.title,
+        body: pr.body,
+        state: "open",
+        updated_at: "2026-09-29",
+        html_url: pr.html_url,
+        labels: [],
+        pull_request: {},
+      });
+    return scanResponses(argv);
+  };
+  const workflow = new Workflow(factory);
+  const scan = await run(workflow.scan("pr"));
+  expect(scan.assessmentScan?.prs).toEqual([1]);
+  const state = await run(factory.state(1));
+  const resultsFile = join(root, "agent-results.json");
+  await run(
+    writeJson(resultsFile, {
+      results: [{ ...result(), number: 1, fingerprint: state.fingerprint }],
+    }),
+  );
+  await run(factory.assess(scan.assessmentScan!.id, resultsFile));
+  const file = join(root, "advance.json");
+  await run(
+    writeJson(file, {
+      entries: [
+        {
+          id: "review",
+          target: { kind: "pr", number: 1 },
+          fingerprint: scan.items[0]!.fingerprint,
+          summary: "Fits repository scope",
+          evidence: ["source.ts"],
+          actions: [{ type: "advance", gate: "classification" }],
+        },
+      ],
+    }),
+  );
+  const proposal = await run(workflow.propose(scan.id, file));
+  await run(
+    workflow.approve(proposal.id, ["review"], "Advance this PR to review"),
+  );
+  const changed = await run(factory.state(1));
+  changed.results.classification = {
+    ...changed.results.classification!,
+    summary: "Changed finding",
+  };
+  await run(factory.save(changed));
+  await expect(run(workflow.apply(proposal.id))).rejects.toThrow(
+    "Assessment changed",
+  );
+  const revised = await run(workflow.propose(scan.id, file));
+  await run(
+    workflow.approve(revised.id, ["review"], "Approve the revised finding"),
+  );
+  await run(workflow.apply(revised.id));
+  expect((await run(factory.state(1))).status).toBe("classification:approved");
+  expect(calls.some((argv) => argv[0] === "test-adapter")).toBe(false);
+  expect(
+    calls
+      .filter((argv) => argv[1] === "api")
+      .every((argv) => argv[3] === "GET"),
+  ).toBe(true);
 });

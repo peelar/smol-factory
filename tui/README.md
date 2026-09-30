@@ -20,7 +20,9 @@ Inspect state and adapter checkpoints before retrying an interrupted launch.
 `.smol-factory/` once per second. `live.ts` joins current GitHub title, author,
 revision and eligibility by PR number, refreshing every five minutes or on `r`.
 PRs currently excluded by the scan rule are removed from the visible queue. GitHub
-reads happen in the background; failures leave saved details visible with a
+Issues and PR browser pages omit core members, owners, and bots; page counts refer
+to the remaining items in GitHub's first 1,000 search results. Reads happen in
+the background; failures leave saved details visible with a
 warning. A changed title or head warns that the saved assessment needs a new
 scan. Invalid local reads retain the last good snapshot. The displayed status
 is local assessment state, not a process heartbeat. Terminal control sequences
@@ -32,9 +34,10 @@ The shared `src/assessment.ts` projection also powers CLI status and reports.
 “Needs me” includes passing results awaiting approval and blocked findings
 awaiting a maintainer decision. Stale and interrupted work go to the harness.
 
-Keys: arrows/j/k select; Tab changes pane; 1–4 select detail tabs;
-f filters; o opens setup; s scans; c classifies; a proposes a maintainer decision; x launches an approved stage; r refreshes;
-q quits. Enter confirms an actionable dialog and Escape cancels. Demo dialogs are
+Keys: Tab switches the Issues and PR views; arrows/j/k select;
+Enter opens the selected issue or PR's next step; right opens PR details and left returns to the list; 1–4 select detail tabs;
+f filters; o opens setup; c classifies the latest scan; a previews a maintainer decision; x launches an approved stage; r refreshes;
+q quits. Selecting a PR loads its description and file patches. Enter classifies the displayed revision after the preview loads. Approval dialogs still require confirmation and Escape cancels. Demo dialogs are
 previews. Onboarding uses Enter to install the skill, r to refresh and q to quit. Once
 configuration is ready, Tab returns to the queue.
 

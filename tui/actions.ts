@@ -2,8 +2,11 @@ import { Effect } from "effect";
 import { Factory } from "../src/factory";
 import { fail, withLock } from "../src/io";
 import type { Gate } from "../src/schema";
+import { Workflow } from "../src/workflow";
 export type QueueAction =
   | { kind: "scan" }
+  | { kind: "collect-issue"; number: number }
+  | { kind: "classify-target"; number: number; head: string }
   | { kind: "classify"; run: string }
   | {
       kind: "approve" | "launch";
@@ -20,6 +23,38 @@ export const performAction = (factory: Factory, action: QueueAction) =>
       if (action.kind === "scan") {
         yield* factory.scan();
         return "Scan saved. Classification is a separate action.";
+      }
+      if (action.kind === "collect-issue") {
+        yield* new Workflow(factory).scanTarget({
+          kind: "issue",
+          number: action.number,
+        });
+        return `Issue #${action.number} collected. Ask your agent to assess it and prepare exact proposals.`;
+      }
+      if (action.kind === "classify-target") {
+        const current = yield* factory.metadata(action.number);
+        if (current.head.sha !== action.head)
+          return yield* fail(
+            "PR changed since the preview. Refresh and review the current revision before classifying.",
+          );
+        const scan = yield* factory.scan(
+          undefined,
+          [action.number],
+          action.head,
+        );
+        if (!scan.prs.includes(action.number))
+          return yield* fail(
+            `PR #${action.number} is not eligible for assessment`,
+          );
+        const captured = yield* factory.state(action.number);
+        if (captured.head !== action.head)
+          return yield* fail(
+            "PR changed during evidence capture. Refresh and review before classifying.",
+          );
+        if (!scan.pending?.includes(action.number))
+          return `PR #${action.number} already has a current classification.`;
+        yield* factory.classify(scan.id);
+        return `PR #${action.number} classified. Findings require maintainer review.`;
       }
       if (action.kind === "classify") {
         yield* factory.classify(action.run);

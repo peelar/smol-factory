@@ -40,7 +40,7 @@
   "files": [
     "src",
     "scripts",
-    "skills/smol-factory",
+    "skills",
     "tui",
     "docs",
     ".bun-version",

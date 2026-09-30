@@ -1,10 +1,13 @@
+import { latestIssueRun } from "./model";
 import { assessment } from "../src/assessment";
 import { stageReport } from "../src/report";
 import { FactoryError } from "../src/io";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { useEffect, useState, useRef } from "react";
 import {
+  browsePrimary,
   clean,
+  cleanMultiline,
   currentGate,
   filters,
   gates,
@@ -15,6 +18,7 @@ import {
   visuals,
   type Filter,
   type PullRequest,
+  type PrPreview,
   type Snapshot,
 } from "./model";
 
@@ -209,12 +213,18 @@ export function App({
   onQuit,
   onSetup,
   onAction,
+  loadPr,
 }: {
-  load: (force?: boolean) => Promise<Snapshot>;
+  load: (
+    force?: boolean,
+    kind?: "issue" | "pr",
+    page?: number,
+  ) => Promise<Snapshot>;
   demo?: boolean;
   onQuit: () => void;
   onSetup?: () => void;
   onAction?: (action: QueueAction) => Promise<string>;
+  loadPr?: (number: number, force?: boolean) => Promise<PrPreview>;
 }) {
   const { width, height } = useTerminalDimensions();
   const [snapshot, setSnapshot] = useState<Snapshot>(empty);
@@ -232,13 +242,22 @@ export function App({
   }>();
   const executing = useRef(false);
   const [refresh, setRefresh] = useState(0);
+  const [browseKind, setBrowseKind] = useState<"issue" | "pr">("pr");
+  const [browsePage, setBrowsePage] = useState(1);
+  const [browseSelected, setBrowseSelected] = useState(0);
+  const [browsePane, setBrowsePane] = useState<"list" | "details">("list");
+  const [prPreview, setPrPreview] = useState<{
+    number: number;
+    value?: PrPreview;
+    error?: string;
+  }>();
   useEffect(() => {
     let stopped = false;
     let timer: ReturnType<typeof setTimeout>;
     let force = refresh > 0;
     const update = async () => {
       try {
-        const next = await load(force);
+        const next = await load(force, browseKind, browsePage);
         force = false;
         if (!stopped) {
           setSnapshot(next);
@@ -260,7 +279,101 @@ export function App({
       stopped = true;
       clearTimeout(timer);
     };
-  }, [load, refresh]);
+  }, [load, refresh, browseKind, browsePage]);
+  const savedIssues = [
+    ...new Map([
+      ...(snapshot.proposals ?? []).flatMap((proposal) =>
+        proposal.entries
+          .filter((entry) => entry.target.kind === "issue")
+          .map(
+            (entry) =>
+              [
+                entry.target.number,
+                {
+                  number: entry.target.number,
+                  title: entry.summary,
+                  author: "",
+                  url: "",
+                },
+              ] as const,
+          ),
+      ),
+      ...(snapshot.issueRuns ?? []).map(
+        (run) =>
+          [
+            run.number,
+            {
+              number: run.number,
+              title: run.result?.summary ?? `Issue #${run.number}`,
+              author: "",
+              url: "",
+            },
+          ] as const,
+      ),
+    ]).values(),
+  ];
+  const browse =
+    snapshot.browse?.kind === browseKind && snapshot.browse.page === browsePage
+      ? snapshot.browse
+      : browseKind === "issue" && !snapshot.browse
+        ? {
+            kind: "issue" as const,
+            page: 1,
+            total: savedIssues.length,
+            items: savedIssues,
+          }
+        : undefined;
+  const browseItem = browse?.items[browseSelected];
+  useEffect(() => {
+    if (browseKind !== "pr" || !browseItem || !loadPr) return;
+    const number = browseItem.number;
+    let stopped = false;
+    setPrPreview({ number });
+    void loadPr(number, refresh > 0)
+      .then((value) => {
+        if (!stopped) setPrPreview({ number, value });
+      })
+      .catch(() => {
+        if (!stopped)
+          setPrPreview({
+            number,
+            error: "Could not load PR content. Refresh to retry.",
+          });
+      });
+    return () => {
+      stopped = true;
+    };
+  }, [browseKind, browseItem?.number, loadPr, refresh]);
+  const activePreview =
+    browseKind === "pr" && prPreview?.number === browseItem?.number
+      ? prPreview?.value
+      : undefined;
+  const previewError =
+    browseKind === "pr" && prPreview?.number === browseItem?.number
+      ? prPreview?.error
+      : undefined;
+  const browseState =
+    browseKind === "pr" && browseItem
+      ? snapshot.prs.find((item) => item.number === browseItem.number)
+      : undefined;
+  const previewRequiredForPrimary =
+    browseKind === "pr" &&
+    !activePreview &&
+    (!browseState ||
+      ["classify_scan", "rescan"].includes(
+        assessment(browseState).next.action,
+      ));
+  const browseEntries = browseItem
+    ? (snapshot.proposals ?? []).flatMap((proposal) =>
+        proposal.entries
+          .filter(
+            (entry) =>
+              entry.target.kind === browseKind &&
+              entry.target.number === browseItem.number,
+          )
+          .map((entry) => ({ proposal, entry })),
+      )
+    : [];
   const prs = selectPrs(snapshot, filter);
   const pr = prs.find((item) => item.number === selected) ?? prs[0];
   useEffect(() => {
@@ -280,6 +393,35 @@ export function App({
     ),
   );
   const visible = prs.slice(offset, offset + pageSize);
+  const startAction = (action: QueueAction) => {
+    if (!onAction || executing.current) return;
+    executing.current = true;
+    setModal({
+      title: "Working…",
+      detail:
+        "The factory is checking the request. Do not retry while it is running.",
+    });
+    void onAction(action)
+      .then((detail) => setModal({ title: "Action completed", detail }))
+      .catch((error: unknown) =>
+        setModal({
+          title: "Action stopped",
+          detail:
+            error instanceof FactoryError
+              ? error.message
+              : "Local I/O or input failed. Run smol status and use the CLI for details before retrying.",
+        }),
+      )
+      .finally(() => {
+        executing.current = false;
+        setRefresh((value) => value + 1);
+      });
+  };
+  const startPrimary = (next: ReturnType<typeof browsePrimary>) => {
+    if (onAction && next.action && next.action.kind !== "approve")
+      startAction(next.action);
+    else setModal({ ...next, action: onAction ? next.action : undefined });
+  };
   useKeyboard((key) => {
     if (key.ctrl && key.name === "c") {
       onQuit();
@@ -288,30 +430,96 @@ export function App({
     if (modal) {
       if (executing.current) return;
       if (key.name === "return" && modal.action && onAction) {
-        executing.current = true;
-        const action = modal.action;
-        setModal({
-          title: "Working…",
-          detail:
-            "The factory is checking the request. Do not retry while it is running.",
-        });
-        void onAction(action)
-          .then((detail) => setModal({ title: "Action completed", detail }))
-          .catch((error: unknown) =>
-            setModal({
-              title: "Action stopped",
-              detail:
-                error instanceof FactoryError
-                  ? error.message
-                  : "Local I/O or input failed. Run smol status and use the CLI for details before retrying.",
-            }),
-          )
-          .finally(() => {
-            executing.current = false;
-            setRefresh((value) => value + 1);
-          });
+        startAction(modal.action);
       } else if (key.name === "escape" || key.name === "return")
         setModal(undefined);
+      return;
+    }
+    if (browseKind === "issue" || snapshot.browse) {
+      if (key.name === "q") onQuit();
+      else if (key.name === "o") onSetup?.();
+      else if (key.name === "tab") {
+        key.preventDefault();
+        setBrowseKind((kind) => (kind === "pr" ? "issue" : "pr"));
+        setBrowsePage(1);
+        setBrowseSelected(0);
+        setBrowsePane("list");
+      } else if (key.name === "r") setRefresh((value) => value + 1);
+      else if (key.name === "right") setBrowsePane("details");
+      else if (key.name === "left") setBrowsePane("list");
+      else if (
+        key.name === "[" ||
+        (browsePane === "list" && key.name === "pageup")
+      ) {
+        setBrowsePage((page) => Math.max(1, page - 1));
+        setBrowseSelected(0);
+        setBrowsePane("list");
+      } else if (
+        key.name === "]" ||
+        (browsePane === "list" && key.name === "pagedown")
+      ) {
+        if (browse && browsePage * 20 < browse.total) {
+          setBrowsePage((page) => page + 1);
+          setBrowseSelected(0);
+          setBrowsePane("list");
+        }
+      } else if (
+        browsePane === "list" &&
+        ["up", "down", "j", "k"].includes(key.name)
+      ) {
+        const delta = key.name === "up" || key.name === "k" ? -1 : 1;
+        setBrowseSelected((index) =>
+          Math.max(0, Math.min((browse?.items.length ?? 1) - 1, index + delta)),
+        );
+      } else if (key.name === "return" && browseItem) {
+        if (previewRequiredForPrimary) return;
+        const next = browsePrimary(
+          snapshot,
+          browseKind,
+          browseItem.number,
+          activePreview,
+        );
+        startPrimary(next);
+      } else if (["a", "x"].includes(key.name) && browseState) {
+        const action = previewAction(browseState);
+        const next = assessment(browseState).next;
+        if (
+          action &&
+          (key.name === "x"
+            ? next.action === "launch"
+            : assessment(browseState).needs_maintainer)
+        ) {
+          const kind =
+            next.action === "approve" || next.action === "launch"
+              ? next.action
+              : undefined;
+          setModal({
+            ...action,
+            revision: browseState.head,
+            action:
+              onAction && kind
+                ? {
+                    kind,
+                    number: browseState.number,
+                    gate: currentGate(browseState),
+                    fingerprint: browseState.fingerprint,
+                  }
+                : undefined,
+          });
+        }
+      } else if (key.name === "?")
+        setModal({
+          title: "Keyboard guide",
+          detail:
+            "Tab switches Issues and PRs · ↑/↓ selects · Right focuses content · Left returns to the list · Enter starts the next available step · [ and ] change pages · r refreshes GitHub · a previews a decision · x launches an approved stage · o opens setup · q quits.",
+        });
+      return;
+    }
+    if (key.name === "tab") {
+      key.preventDefault();
+      setBrowseKind("issue");
+      setBrowsePage(1);
+      setBrowseSelected(0);
       return;
     }
     if (key.name === "q") onQuit();
@@ -323,11 +531,10 @@ export function App({
         filters[(filters.indexOf(filter) + 1) % filters.length] ?? "All PRs",
       );
       setPane("list");
-    } else if (key.name === "tab") {
-      key.preventDefault();
-      setPane((value) => (value === "list" ? "details" : "list"));
-    } else if (key.name === "return" || key.name === "right")
-      setPane("details");
+    } else if (key.name === "return" && pr) {
+      const next = browsePrimary(snapshot, "pr", pr.number);
+      startPrimary(next);
+    } else if (key.name === "right") setPane("details");
     else if (key.name === "left") setPane("list");
     else if (["1", "2", "3", "4"].includes(key.name)) {
       setTab(tabs[Number(key.name) - 1] ?? "Overview");
@@ -367,15 +574,7 @@ export function App({
               : undefined,
         });
       }
-    } else if (key.name === "s")
-      setModal({
-        title: "Scan newest configured external PRs?",
-        detail: onAction
-          ? "Read GitHub and save evidence for eligible PRs. No classification agent starts automatically."
-          : "Would capture eligible PRs for the harness to classify.",
-        action: onAction ? { kind: "scan" } : undefined,
-      });
-    else if (key.name === "c" && onAction && snapshot.latestScan)
+    } else if (key.name === "c" && onAction && snapshot.latestScan)
       setModal({
         title: "Classify the latest scan?",
         detail:
@@ -386,7 +585,7 @@ export function App({
       setModal({
         title: "Keyboard guide",
         detail:
-          "↑/↓ or j/k select a PR · Tab switches panes · 1–4 select detail tabs · f cycles filters · r refreshes files and PR details · a previews a decision · s scans · c classifies the latest scan · x launches an approved stage · o opens setup · Esc returns · q quits. Scroll the detail pane with arrow keys, Page Up/Down or the mouse.",
+          "Tab switches Issues and PRs · ↑/↓ or j/k select a PR · Enter starts the next step · right opens details · left returns to the list · 1–4 select detail tabs · f cycles filters · r refreshes files and PR details · a previews a decision · c classifies the latest scan · x launches an approved stage · o opens setup · Esc returns · q quits. Scroll the detail pane with arrow keys, Page Up/Down or the mouse.",
       });
   });
   const needsMe = selectPrs(snapshot, "Needs me").length;
@@ -401,6 +600,354 @@ export function App({
         </text>
       </box>
     );
+  if (browseKind === "issue" || snapshot.browse) {
+    const entriesFor = (kind: "issue" | "pr", number: number) =>
+      (snapshot.proposals ?? []).flatMap((proposal) =>
+        proposal.entries
+          .filter(
+            (entry) =>
+              entry.target.kind === kind && entry.target.number === number,
+          )
+          .map((entry) => ({ proposal, entry })),
+      );
+    const labelFor = (number: number) => {
+      const run =
+        browseKind === "issue" ? latestIssueRun(snapshot, number) : undefined;
+      if (run)
+        return `${run.stage} · ${run.status}${run.result ? ` · ${run.result.verdict}` : ""}`;
+      const state =
+        browseKind === "pr"
+          ? snapshot.prs.find((item) => item.number === number)
+          : undefined;
+      if (state)
+        return visuals[overall(state)].label + " · " + currentGate(state);
+      const entries = entriesFor(browseKind, number);
+      if (!entries.length)
+        return snapshot.collected?.some(
+          (item) => item.kind === browseKind && item.number === number,
+        ) ||
+          (browseKind === "pr" && snapshot.latestScan?.prs.includes(number))
+          ? "Awaiting assessment"
+          : "Idle";
+      if (
+        entries.some(
+          ({ proposal, entry }) =>
+            entry.actions.length &&
+            entry.actions.every((_, index) =>
+              proposal.receipts.some(
+                (receipt) =>
+                  receipt.entry === entry.id &&
+                  receipt.index === index &&
+                  receipt.status === "done",
+              ),
+            ),
+        )
+      )
+        return "Actions applied";
+      if (
+        entries.some(({ proposal, entry }) =>
+          proposal.approvals.some(
+            (approval) =>
+              approval.digest === proposal.digest &&
+              approval.ids.includes(entry.id),
+          ),
+        )
+      )
+        return "Approved actions pending";
+      return "Needs approval";
+    };
+    const sectionColor = browseKind === "issue" ? "#a6d9a0" : color.accent;
+    return (
+      <box
+        width="100%"
+        height="100%"
+        backgroundColor={color.bg}
+        flexDirection="column"
+        padding={1}
+        gap={1}
+      >
+        <text fg={sectionColor}>
+          <b>smol-factory</b> · {browseKind === "pr" ? "PRs" : "Issues"} · page{" "}
+          {browsePage} · {browse?.total ?? "…"} open
+        </text>
+        <text fg={color.muted}>
+          [Enter] next step · [→] content · [←] list · [Tab]{" "}
+          {browseKind === "pr" ? "Issues" : "PRs"} · [/] pages · [r] refresh ·
+          [?] keys · [q] quit
+        </text>
+        <box flexDirection="row" flexGrow={1} minHeight={0} gap={1}>
+          <box
+            width={Math.max(32, Math.floor(width * 0.4))}
+            border
+            borderColor={sectionColor}
+            backgroundColor={color.panel}
+            flexDirection="column"
+            padding={1}
+          >
+            {!browse && <text fg={color.muted}>Loading GitHub page…</text>}
+            {browse && !browse.items.length && (
+              <text fg={color.muted}>
+                No open {browseKind === "pr" ? "PRs" : "issues"} on this page.
+              </text>
+            )}
+            <scrollbox flexGrow={1} focused={browsePane === "list" && !modal}>
+              {(browse?.items ?? []).map((item, index) => (
+                <box
+                  key={item.number}
+                  flexDirection="column"
+                  backgroundColor={
+                    index === browseSelected ? color.selected : color.panel
+                  }
+                  onMouseDown={() => {
+                    setBrowseSelected(index);
+                    setBrowsePane("list");
+                  }}
+                  marginBottom={1}
+                >
+                  <text fg={color.text}>
+                    {index === browseSelected ? "▎" : " "} #{item.number}{" "}
+                    {clipped(item.title, Math.floor(width * 0.4) - 9)}
+                  </text>
+                  <text fg={color.muted}> {labelFor(item.number)}</text>
+                </box>
+              ))}
+            </scrollbox>
+            <text fg={color.muted}>
+              {browse
+                ? `${(browsePage - 1) * 20 + (browse.items.length ? 1 : 0)}–${(browsePage - 1) * 20 + browse.items.length} of ${browse.total}`
+                : "Loading"}{" "}
+              · ↑↓ select
+            </text>
+          </box>
+          <box
+            border
+            borderColor={color.border}
+            backgroundColor={color.panel}
+            flexDirection="column"
+            flexGrow={1}
+            minWidth={0}
+            padding={1}
+            gap={1}
+          >
+            {browseItem ? (
+              <>
+                <text fg={color.text}>
+                  <b>
+                    #{browseItem.number}{" "}
+                    {clipped(browseItem.title, Math.floor(width * 0.5) - 5)}
+                  </b>
+                </text>
+                {!!browseItem.author && (
+                  <text fg={color.muted}>
+                    @{clean(browseItem.author)} · {clean(browseItem.url)}
+                  </text>
+                )}
+                <text fg={sectionColor}>{labelFor(browseItem.number)}</text>
+                {!previewRequiredForPrimary && (
+                  <text fg={sectionColor}>
+                    {browsePrimary(
+                      snapshot,
+                      browseKind,
+                      browseItem.number,
+                      activePreview,
+                    ).action
+                      ? "Enter: "
+                      : ""}
+                    {
+                      browsePrimary(
+                        snapshot,
+                        browseKind,
+                        browseItem.number,
+                        activePreview,
+                      ).title
+                    }
+                  </text>
+                )}
+                {browseState && (
+                  <>
+                    {assessment(browseState).next.action !==
+                      "classify_scan" && (
+                      <text fg={color.text}>
+                        {assessment(browseState).next.reason}
+                      </text>
+                    )}
+                    {gates.some(
+                      (gate) => stageStatus(browseState, gate) !== "waiting",
+                    ) && (
+                      <text fg={color.muted}>
+                        Classify:{" "}
+                        {
+                          visuals[stageStatus(browseState, "classification")]
+                            .label
+                        }{" "}
+                        · Review:{" "}
+                        {visuals[stageStatus(browseState, "review")].label} ·
+                        Verify:{" "}
+                        {
+                          visuals[stageStatus(browseState, "verification")]
+                            .label
+                        }
+                      </text>
+                    )}
+                  </>
+                )}
+                {!browseState && !browseEntries.length && (
+                  <text fg={color.muted}>
+                    No local workflow activity recorded.
+                  </text>
+                )}
+                <scrollbox
+                  flexGrow={1}
+                  focused={browsePane === "details" && !modal}
+                >
+                  {browseKind === "pr" && !activePreview && (
+                    <text fg={previewError ? "#ed8796" : color.muted}>
+                      {previewError ?? "Loading description and files…"}
+                    </text>
+                  )}
+                  {activePreview && (
+                    <box flexDirection="column" gap={1}>
+                      <text fg={sectionColor}>
+                        Description · revision{" "}
+                        {clean(activePreview.head.slice(0, 12))}
+                      </text>
+                      <text fg={color.text} wrapMode="word">
+                        {cleanMultiline(
+                          activePreview.body || "No description provided.",
+                        )}
+                      </text>
+                      <text fg={sectionColor}>
+                        Changed files · {activePreview.files.length}
+                      </text>
+                      {activePreview.files.map((file, index) => (
+                        <box
+                          key={`${file.path}:${index}`}
+                          flexDirection="column"
+                          marginBottom={1}
+                        >
+                          <text fg={color.accent}>
+                            {clean(file.status)} · {clean(file.path)}
+                          </text>
+                          <text fg={color.text} wrapMode="word">
+                            {cleanMultiline(
+                              file.patch ?? "Diff unavailable from GitHub.",
+                            )}
+                          </text>
+                        </box>
+                      ))}
+                    </box>
+                  )}
+                  {browseKind === "issue" &&
+                    browseItem &&
+                    (snapshot.issueRuns ?? [])
+                      .filter((run) => run.number === browseItem.number)
+                      .sort((a, b) => b.updated.localeCompare(a.updated))
+                      .map((run) => (
+                        <box
+                          key={run.id}
+                          flexDirection="column"
+                          marginBottom={1}
+                        >
+                          <text fg={sectionColor}>
+                            {clean(
+                              `${run.stage} · ${run.status} · ${run.result?.verdict ?? "pending"}`,
+                            )}
+                          </text>
+                          {run.events.map((event, index) => (
+                            <text key={index} wrapMode="word">
+                              {cleanMultiline(
+                                `${event.time} · ${event.status}: ${event.detail}`,
+                              )}
+                            </text>
+                          ))}
+                          {run.result?.evidence.map((evidence, index) => (
+                            <text key={index} wrapMode="word">
+                              {cleanMultiline(evidence)}
+                            </text>
+                          ))}
+                        </box>
+                      ))}
+                  {browseEntries.map(({ proposal, entry }) => (
+                    <box
+                      key={`${proposal.id}:${entry.id}`}
+                      flexDirection="column"
+                      marginBottom={1}
+                    >
+                      <text fg={sectionColor}>
+                        {clean(entry.id)} · {time(proposal.created)}
+                      </text>
+                      <text fg={color.text}>{clean(entry.summary)}</text>
+                      {entry.evidence.map((evidence, index) => (
+                        <text key={`e${index}`} fg={color.muted}>
+                          {clean(evidence)}
+                        </text>
+                      ))}
+                      {entry.actions.map((action, index) => (
+                        <text key={index} fg={color.muted}>
+                          {proposal.receipts.find(
+                            (receipt) =>
+                              receipt.entry === entry.id &&
+                              receipt.index === index,
+                          )?.status ?? "pending"}{" "}
+                          · {clean(JSON.stringify(action))}
+                        </text>
+                      ))}
+                      <text fg={color.muted}>
+                        {proposal.approvals.some(
+                          (approval) =>
+                            approval.digest === proposal.digest &&
+                            approval.ids.includes(entry.id),
+                        )
+                          ? "Approved"
+                          : "Needs approval"}
+                      </text>
+                    </box>
+                  ))}
+                </scrollbox>
+              </>
+            ) : (
+              <text fg={color.muted}>Select an item.</text>
+            )}
+          </box>
+        </box>
+        {!!snapshot.warnings.length && (
+          <text fg="#ed8796">{clipped(snapshot.warnings[0]!, width - 3)}</text>
+        )}
+        {modal && (
+          <box
+            position="absolute"
+            left={0}
+            top={0}
+            width="100%"
+            height="100%"
+            alignItems="center"
+            justifyContent="center"
+            zIndex={10}
+          >
+            <box
+              width={Math.min(76, width - 6)}
+              border
+              borderColor={sectionColor}
+              backgroundColor={color.panel}
+              padding={2}
+              flexDirection="column"
+              gap={1}
+            >
+              <text fg={color.text}>
+                <b>{modal.title}</b>
+              </text>
+              <text fg={color.text}>{clean(modal.detail)}</text>
+              <text fg="#f9d78c">
+                {modal.action
+                  ? "Enter confirms this action · Esc cancels"
+                  : "Enter or Esc closes"}
+              </text>
+            </box>
+          </box>
+        )}
+      </box>
+    );
+  }
   return (
     <box
       width="100%"
@@ -438,11 +985,7 @@ export function App({
             <text fg={color.accent}>
               {filter} <span fg={color.muted}>· [f] filter</span>
             </text>
-            <box
-              flexDirection="column"
-              flexGrow={1}
-              overflow="hidden"
-            >
+            <box flexDirection="column" flexGrow={1} overflow="hidden">
               {!prs.length && (
                 <text fg={color.muted}>
                   {!loaded
@@ -484,7 +1027,7 @@ export function App({
               {prs.length
                 ? `${offset + 1}–${Math.min(offset + pageSize, prs.length)} of ${prs.length}`
                 : "0 PRs"}{" "}
-              · ↑↓ select · Enter inspect
+              · ↑↓ select · Enter next step · → details
             </text>
           </box>
         )}
@@ -576,7 +1119,7 @@ export function App({
         </text>
       )}
       <text fg={color.muted} flexShrink={0}>
-        [?] keys · [q] quit
+        [Tab] Issues · [?] keys · [q] quit
       </text>
       {modal && (
         <box

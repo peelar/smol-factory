@@ -55,6 +55,21 @@ const discussion = (items: readonly Discussion[]) =>
     state: c.state ?? null,
     url: c.html_url ?? null,
   }));
+export function isExternalContributor(
+  item: {
+    user: { login: string; type: string } | null;
+    author_association?: string;
+  },
+  coreMembers: readonly string[],
+) {
+  return (
+    item.user?.type === "User" &&
+    !["MEMBER", "OWNER"].includes(item.author_association ?? "") &&
+    !coreMembers.some(
+      (member) => member.toLowerCase() === item.user?.login.toLowerCase(),
+    )
+  );
+}
 export class Factory {
   constructor(readonly root: string) {}
   get storage() {
@@ -77,6 +92,13 @@ export class Factory {
       for (const path of [context, ...Object.values(skills)]) {
         if ((yield* fs.stat(path)).type !== "File")
           return yield* fail(`Configured repository file is missing: ${path}`);
+      }
+      for (const path of Object.values(config.scan_skills ?? {})) {
+        if (
+          path &&
+          (yield* fs.stat(yield* contained(packageRoot, path))).type !== "File"
+        )
+          return yield* fail(`Configured scan skill is missing: ${path}`);
       }
       return { config, configPath, context, skills };
     });
@@ -136,11 +158,7 @@ export class Factory {
       return (
         pr.state === "open" &&
         !pr.draft &&
-        pr.user?.type === "User" &&
-        !["MEMBER", "OWNER"].includes(pr.author_association ?? "") &&
-        !config.core_members
-          .map((s) => s.toLowerCase())
-          .includes(pr.user.login.toLowerCase())
+        isExternalContributor(pr, config.core_members)
       );
     });
   statePath = (number: number) =>
@@ -320,10 +338,20 @@ export class Factory {
       }
       return { items, truncated: refs.size > 20 };
     });
-  scan = (explicit?: number) =>
+  scan = (
+    explicit?: number,
+    candidates?: readonly number[],
+    expectedHead?: string,
+  ) =>
     Effect.gen({ self: this }, function* () {
       yield* this.ready();
-      const discovered = yield* this.discover(explicit);
+      const discovered = candidates
+        ? yield* Effect.forEach(candidates, (n) => this.metadata(n))
+        : yield* this.discover(explicit);
+      if (expectedHead && discovered.some((pr) => pr.head.sha !== expectedHead))
+        return yield* fail(
+          "PR changed since the preview. Refresh and review before classifying.",
+        );
       const id = now().replace(/[-:.]/g, "") + "-" + randomUUID().slice(0, 8);
       const folder = join(this.storage, ".runtime/scans", id);
       const fs = yield* FileSystem.FileSystem;
@@ -551,8 +579,23 @@ export class Factory {
         ),
         stage: "classification",
       });
+      return yield* this.assess(id, output);
+    });
+  assess = (id: string, file: string) =>
+    Effect.gen({ self: this }, function* () {
+      if (!/^[\w-]+$/.test(id)) return yield* fail("Invalid scan run ID");
+      const folder = yield* contained(join(this.storage, ".runtime/scans"), id);
+      const manifest = yield* readSchema(
+        join(folder, "manifest.json"),
+        manifestSchema,
+      );
+      const pending: PullRequest[] = [];
+      for (const n of manifest.pending ?? []) {
+        const value = yield* this.state(n);
+        if (!value.results.classification) pending.push(value);
+      }
       const { results } = yield* readSchema(
-        output,
+        file,
         Schema.Struct({
           results: Schema.Array(
             Schema.Struct({ ...resultSchema.fields, number: Schema.Int }),
@@ -613,7 +656,7 @@ export class Factory {
         if (/^\d+$/.test(name)) values.push(yield* this.state(Number(name)));
       return values;
     });
-  launch = (number: number, gate: Gate) =>
+  launch = (number: number, gate: Gate, inConversation = false) =>
     Effect.gen({ self: this }, function* () {
       yield* this.ready();
       if (gate === "classification")
@@ -666,6 +709,14 @@ export class Factory {
         "Authorized by the recorded previous-gate approval.",
       );
       yield* this.save(value);
+      if (inConversation)
+        return {
+          number,
+          gate,
+          fingerprint: value.fingerprint,
+          prompt_path: prompt,
+          packet: value.packet,
+        };
       yield* Effect.gen({ self: this }, function* () {
         value.thread = yield* Schema.decodeUnknownEffect(threadSchema)(
           yield* this.adapter("launch", {

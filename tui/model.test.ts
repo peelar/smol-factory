@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { demoSnapshot } from "./demo";
 import {
+  browsePrimary,
   clean,
   currentGate,
   overall,
@@ -8,6 +9,34 @@ import {
   selectPrs,
   stageStatus,
 } from "./model";
+
+test("classification requires the selected PR preview and binds its revision", () => {
+  const snapshot = demoSnapshot();
+  const pr = snapshot.prs[0]!;
+  pr.status = "awaiting_classification";
+  pr.results = {};
+  pr.approvals = {};
+  snapshot.scanRuns = [{ id: "scan-1", prs: [901], pending: [901] }];
+  expect(browsePrimary(snapshot, "pr", 901).action).toBeUndefined();
+  snapshot.scanRuns = [{ id: "scan-2", prs: [902], pending: [902] }];
+  snapshot.latestScan = undefined;
+  const preview = {
+    number: 901,
+    head: "viewed-head",
+    body: "Description",
+    files: [],
+  };
+  expect(browsePrimary(snapshot, "pr", 901, preview).action).toEqual({
+    kind: "classify-target",
+    number: 901,
+    head: "viewed-head",
+  });
+  expect(browsePrimary(snapshot, "pr", 999, preview).action).toBeUndefined();
+  expect(browsePrimary(snapshot, "issue", 999).action).toEqual({
+    kind: "collect-issue",
+    number: 999,
+  });
+});
 
 test("pass is not approval, and approval advances the displayed stage", () => {
   const pr = demoSnapshot().prs[0]!;

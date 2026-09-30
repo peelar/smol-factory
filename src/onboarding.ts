@@ -34,15 +34,19 @@ const codexDefaults = {
 
 export class Onboarding {
   constructor(readonly factory: Factory) {}
-  installSkill = (global = false) =>
+  installSkill = (global = false, name = "smol-factory") =>
     Effect.gen({ self: this }, function* () {
       const fs = yield* FileSystem.FileSystem;
+      if (
+        !["smol-factory", "setup-scan-issues", "setup-scan-prs"].includes(name)
+      )
+        return yield* fail("Unknown bundled skill");
       const target = join(
         global ? homedir() : this.factory.root,
-        ".agents/skills/smol-factory/SKILL.md",
+        `.agents/skills/${name}/SKILL.md`,
       );
       const content = yield* fs.readFileString(
-        join(installationRoot, "skills/smol-factory/SKILL.md"),
+        join(installationRoot, `skills/${name}/SKILL.md`),
       );
       if (yield* fs.exists(target)) {
         if ((yield* fs.readFileString(target)) !== content)

@@ -1,11 +1,13 @@
 #!/usr/bin/env bun
 import { assessmentStatus } from "../src/assessment";
-import { Effect } from "effect";
+import { Effect, FileSystem } from "effect";
 import { BunRuntime, BunServices } from "@effect/platform-bun";
 import { resolve } from "node:path";
+import { IssueRuns } from "../src/issue-runs";
+import { Workflow } from "../src/workflow";
 import { Factory } from "../src/factory";
 import { Onboarding } from "../src/onboarding";
-import { parseRoot } from "../src/paths";
+import { installationRoot, parseRoot } from "../src/paths";
 import { gates, type Gate } from "../src/schema";
 import {
   fail,
@@ -23,21 +25,108 @@ Usage: smol [--root PATH] [COMMAND]
   inspect [--history-limit 1..30] [--local-only]
   doctor
   skill install [--global]
+  skill install --name setup-scan-issues|setup-scan-prs
   scan [--pr NUMBER]
+  scan issues|prs [--search QUERY]
+  propose SCAN_ID --file PROPOSAL_JSON
+  proposals [PROPOSAL_ID]
+  approve-proposal ID --entries ID,ID --statement 'Exact user instruction'
+  apply PROPOSAL_ID
+  assess RUN_ID --file RESULTS_JSON
   classify RUN_ID
+  issue start NUMBER triage|verification --statement 'Actual user instruction'
+  issue block RUN_ID --reason REASON
+  issue resume RUN_ID --reason REASON
+  issue finish RUN_ID --file RESULT_JSON
+  workflow-help
   validate
   status
   approve NUMBER GATE --statement 'Exact maintainer instruction'
   decide NUMBER GATE --reason 'Exact decision and rationale'
+  start NUMBER GATE
   launch NUMBER GATE
   finish NUMBER GATE RESULT_JSON
 GATE: classification | review | verification
-All GitHub access is read-only. Passing findings never grant approval.`;
+GitHub writes require an exact approved proposal and approval_required policy.`;
 
 export const command = (factory: Factory, args: readonly string[]) =>
   Effect.gen(function* () {
     const [action, arg, gate, option, text] = args;
     const setup = new Onboarding(factory);
+    const workflow = new Workflow(factory);
+    const issues = new IssueRuns(workflow);
+    if (action === "issue") {
+      if (
+        arg === "start" &&
+        args.length === 6 &&
+        /^[1-9]\d*$/.test(gate ?? "") &&
+        (option === "triage" || option === "verification") &&
+        text === "--statement" &&
+        args[5]
+      )
+        return yield* issues.start(Number(gate), option, args[5]);
+      if (
+        (arg === "block" || arg === "resume") &&
+        args.length === 5 &&
+        gate &&
+        option === "--reason" &&
+        text
+      )
+        return yield* issues.transition(
+          gate,
+          arg === "block" ? "blocked" : "running",
+          text,
+        );
+      if (
+        arg === "finish" &&
+        args.length === 5 &&
+        gate &&
+        option === "--file" &&
+        text
+      )
+        return yield* issues.finish(gate, text);
+      return yield* fail(help);
+    }
+    if (action === "workflow-help" && args.length === 1)
+      return yield* (yield* FileSystem.FileSystem).readFileString(
+        resolve(installationRoot, "docs/issue-workflow.md"),
+      );
+    if (
+      action === "scan" &&
+      ["issues", "prs"].includes(arg ?? "") &&
+      (args.length === 2 || (args.length === 4 && gate === "--search"))
+    )
+      return yield* workflow.scan(arg === "issues" ? "issue" : "pr", option);
+    if (
+      action === "assess" &&
+      args.length === 4 &&
+      arg &&
+      gate === "--file" &&
+      option
+    )
+      return yield* factory.assess(arg, resolve(option));
+    if (
+      action === "propose" &&
+      args.length === 4 &&
+      arg &&
+      gate === "--file" &&
+      option
+    )
+      return yield* workflow.propose(arg, option);
+    if (action === "proposals" && args.length <= 2)
+      return arg ? yield* workflow.read(arg) : yield* workflow.list();
+    if (
+      action === "approve-proposal" &&
+      args.length === 6 &&
+      arg &&
+      gate === "--entries" &&
+      option &&
+      text === "--statement" &&
+      args[5]
+    )
+      return yield* workflow.approve(arg, option.split(","), args[5]);
+    if (action === "apply" && args.length === 2 && arg)
+      return yield* workflow.apply(arg);
     if (
       action === "init" &&
       (args.length === 1 || (args.length === 3 && arg === "--repository"))
@@ -46,6 +135,14 @@ export const command = (factory: Factory, args: readonly string[]) =>
     if (action === "analyze" && args.length === 1)
       return yield* setup.analyze();
     if (action === "doctor" && args.length === 1) return yield* setup.doctor();
+    if (
+      action === "skill" &&
+      arg === "install" &&
+      gate === "--name" &&
+      option &&
+      args.length === 4
+    )
+      return yield* setup.installSkill(false, option);
     if (
       action === "skill" &&
       arg === "install" &&
@@ -74,7 +171,11 @@ export const command = (factory: Factory, args: readonly string[]) =>
       };
     }
     if (action === "status" && args.length === 1)
-      return assessmentStatus(yield* factory.states());
+      return {
+        ...assessmentStatus(yield* factory.states()),
+        proposals: yield* workflow.list(),
+        issueRuns: yield* issues.list(),
+      };
     if (
       action === "scan" &&
       (args.length === 1 ||
@@ -103,6 +204,8 @@ export const command = (factory: Factory, args: readonly string[]) =>
       text !== undefined
     )
       return yield* factory.decide(number, stage, text);
+    if (action === "start" && args.length === 3)
+      return yield* factory.launch(number, stage, true);
     if (action === "launch" && args.length === 3)
       return yield* factory.launch(number, stage);
     if (action === "finish" && args.length === 4 && option)

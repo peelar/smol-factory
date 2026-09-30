@@ -10,15 +10,14 @@ import { ProcessRunner, processRunner, withLock } from "../src/io";
 import { App } from "./app";
 import { performAction, type QueueAction } from "./actions";
 import { Setup, type SetupAction } from "./setup";
-import { createLiveSource } from "./live";
+import { createLiveSource, createPrPreviewSource } from "./live";
 import { demoSnapshot } from "./demo";
 
 export async function startTui(root: string, demo = false) {
   const factory = new Factory(root);
   const setup = new Onboarding(factory);
-  const load = demo
-    ? async () => demoSnapshot()
-    : createLiveSource(root);
+  const load = demo ? async () => demoSnapshot() : createLiveSource(root);
+  const loadPr = demo ? undefined : createPrPreviewSource(root);
   const run = async (action: SetupAction): Promise<unknown> => {
     const effect: Effect.Effect<
       unknown,
@@ -68,6 +67,7 @@ export async function startTui(root: string, demo = false) {
     ) : (
       <App
         load={load}
+        loadPr={loadPr}
         demo={demo}
         onAction={demo ? undefined : onAction}
         onQuit={quit}

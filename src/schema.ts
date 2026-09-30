@@ -91,9 +91,18 @@ export const repositorySchema = Schema.Struct({
     Schema.Literal("review"),
     Schema.Literal("verification"),
   ]),
-  github_writes: Schema.Literal(false),
+  github_writes: Schema.Union([
+    Schema.Literal(false),
+    Schema.Literal("approval_required"),
+  ]),
   repair_code: Schema.Literal(false),
   context: Schema.String,
+  scan_skills: Schema.optional(
+    Schema.Struct({
+      issues: Schema.optional(Schema.String),
+      prs: Schema.optional(Schema.String),
+    }),
+  ),
   skills: Schema.Struct({
     classification: Schema.String,
     review: Schema.String,

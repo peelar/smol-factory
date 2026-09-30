@@ -4,7 +4,6 @@ import { act } from "react";
 import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { App } from "./app";
-import { FactoryError } from "../src/io";
 import { demoSnapshot } from "./demo";
 import type { Snapshot } from "./model";
 
@@ -94,7 +93,7 @@ test("compact mode, resize, and long lists keep selection reachable", async () =
     expect(view.captureCharFrame()).toContain("of 60");
     for (let index = 0; index < 20; index++) await press(view, "ARROW_DOWN");
     expect(view.captureCharFrame()).toContain("#40");
-    await press(view, "RETURN");
+    await press(view, "ARROW_RIGHT");
     expect(view.captureCharFrame()).toContain("#40 · demo1234");
     expect(view.captureCharFrame()).toContain("03 Verify");
     await mkdir(resolve(import.meta.dir, "../.runtime/tui-preview"), {
@@ -151,7 +150,7 @@ test("empty factory and failed reads are explicit", async () => {
   }
 });
 
-test("live queue actions require confirmation and Escape cancels", async () => {
+test("live queue approvals require confirmation and Escape cancels", async () => {
   const actions: unknown[] = [];
   let view!: View;
   await act(async () => {
@@ -169,51 +168,91 @@ test("live queue actions require confirmation and Escape cancels", async () => {
     await Bun.sleep(30);
   });
   try {
-    await press(view, "s");
+    await press(view, "a");
     expect(actions).toEqual([]);
     await press(view, "ESCAPE");
     expect(actions).toEqual([]);
-    await press(view, "s");
-    await press(view, "RETURN");
-    expect(actions).toEqual([{ kind: "scan" }]);
-    expect(view.captureCharFrame()).toContain("Action completed");
-    await press(view, "RETURN");
     await press(view, "a");
-    expect(actions.length).toBe(1);
     await press(view, "RETURN");
-    expect(actions[1]).toMatchObject({
+    expect(actions[0]).toMatchObject({
       kind: "approve",
       number: 901,
       gate: "review",
     });
+    expect(view.captureCharFrame()).toContain("Action completed");
+    await press(view, "RETURN");
+    await press(view, "x");
+    expect(actions.length).toBe(1);
   } finally {
     await destroy(view);
   }
 });
 
-test("failed scan shows a safe, actionable error", async () => {
-  let view!: View;
-  await act(async () => {
-    view = await testRender(
-      <App
-        load={async () => ({ prs: [], models: {}, warnings: [] })}
-        onQuit={() => {}}
-        onAction={async () => {
-          throw new FactoryError({
-            message:
-              "GitHub request failed. Check network access and gh auth status, then retry.",
-          });
-        }}
-      />,
-      { width: 140, height: 40 },
-    );
-    await Bun.sleep(30);
+test("browser pages show idle, collected, proposals, and local PR progress", async () => {
+  const snapshot = demoSnapshot();
+  snapshot.browse = {
+    kind: "pr",
+    page: 1,
+    total: 21,
+    items: [
+      {
+        number: 901,
+        title: "Assessed PR",
+        author: "one",
+        url: "https://example.test/pull/901",
+      },
+      {
+        number: 999,
+        title: "Fresh PR",
+        author: "two",
+        url: "https://example.test/pull/999",
+      },
+    ],
+  };
+  snapshot.collected = [{ kind: "issue", number: 11 }];
+  const load = async (
+    _force?: boolean,
+    kind: "issue" | "pr" = "pr",
+    page = 1,
+  ): Promise<Snapshot> => ({
+    ...snapshot,
+    browse:
+      kind === "pr"
+        ? {
+            ...snapshot.browse!,
+            page,
+            items: page === 1 ? snapshot.browse!.items : [],
+          }
+        : {
+            kind,
+            page,
+            total: 2,
+            items: [
+              {
+                number: 10,
+                title: "Untouched issue",
+                author: "three",
+                url: "https://example.test/issues/10",
+              },
+              {
+                number: 11,
+                title: "Collected issue",
+                author: "four",
+                url: "https://example.test/issues/11",
+              },
+            ],
+          },
   });
+  const view = await render(load);
   try {
-    await press(view, "s");
-    await press(view, "RETURN");
-    expect(view.captureCharFrame()).toContain("GitHub request failed");
-    expect(view.captureCharFrame()).toContain("gh auth status");
+    expect(view.captureCharFrame()).toContain("Fresh PR");
+    expect(view.captureCharFrame()).toContain("Idle");
+    expect(view.captureCharFrame()).toContain("Needs approval");
+    await press(view, "]");
+    expect(view.captureCharFrame()).toContain("page 2");
+    await press(view, "TAB");
+    expect(view.captureCharFrame()).toContain("Untouched issue");
+    expect(view.captureCharFrame()).toContain("Awaiting assessment");
   } finally {
     await destroy(view);
   }
@@ -260,6 +299,194 @@ test("decision key never launches harness work; execution shortcut confirms sepa
         gate: "verification",
         fingerprint: "demo",
       },
+    ]);
+  } finally {
+    await destroy(view);
+  }
+});
+
+test("Issues view exposes findings and exact pending actions without approving", async () => {
+  const snapshot: Snapshot = {
+    prs: [],
+    warnings: [],
+    models: {},
+    proposals: [
+      {
+        id: "proposal-1",
+        scan: "scan-1",
+        repository: "example/project",
+        policy: "policy",
+        created: "2026-09-29",
+        digest: "digest",
+        entries: [
+          {
+            id: "retain",
+            target: { kind: "issue", number: 4165 },
+            fingerprint: "fingerprint",
+            summary: "Warehouse limit needs verification",
+            evidence: ["ProductVariants.tsx"],
+            actions: [{ type: "labels", add: ["verify"], remove: ["triage"] }],
+          },
+        ],
+        approvals: [],
+        receipts: [],
+        checkpoints: {},
+      },
+    ],
+  };
+  const before = JSON.stringify(snapshot);
+  const view = await render(async () => snapshot);
+  try {
+    await press(view, "TAB");
+    const frame = view.captureCharFrame();
+    expect(frame).toContain("smol-factory · Issues");
+    expect(frame).toContain("#4165");
+    expect(frame).toContain("Needs approval");
+    expect(frame).toContain("Warehouse limit needs verification");
+    expect(frame).toContain('"verify"');
+    expect(JSON.stringify(snapshot)).toBe(before);
+    await press(view, "TAB");
+    expect(view.captureCharFrame()).toContain("No scanned PRs yet");
+  } finally {
+    await destroy(view);
+  }
+});
+
+test("Enter starts read-only work and confirms approval separately", async () => {
+  const snapshot: Snapshot = {
+    ...demoSnapshot(),
+    browse: {
+      kind: "pr",
+      page: 1,
+      total: 2,
+      items: [
+        {
+          number: 901,
+          title: "Reviewed PR",
+          author: "alice",
+          url: "https://example.test/901",
+        },
+        {
+          number: 999,
+          title: "New PR",
+          author: "bob",
+          url: "https://example.test/999",
+        },
+      ],
+    },
+  };
+  const actions: unknown[] = [];
+  let view!: View;
+  await act(async () => {
+    view = await testRender(
+      <App
+        load={async () => snapshot}
+        loadPr={async (number) => ({
+          number,
+          head: `head-${number}`,
+          body: `Description for ${number}`,
+          files: [
+            { path: "src/change.ts", status: "modified", patch: "+new line" },
+          ],
+        })}
+        onQuit={() => {}}
+        onAction={async (action) => {
+          actions.push(action);
+          return "Saved";
+        }}
+      />,
+      { width: 140, height: 40 },
+    );
+    await Bun.sleep(30);
+  });
+  try {
+    await press(view, "RETURN");
+    expect(view.captureCharFrame()).toContain("Approve review for #901?");
+    expect(actions).toEqual([]);
+    await press(view, "ESCAPE");
+    await press(view, "ARROW_DOWN");
+    expect(view.captureCharFrame()).toContain("Description for 999");
+    expect(view.captureCharFrame()).toContain("src/change.ts");
+    await press(view, "RETURN");
+    expect(view.captureCharFrame()).toContain("Action completed");
+    expect(actions).toEqual([
+      { kind: "classify-target", number: 999, head: "head-999" },
+    ]);
+  } finally {
+    await destroy(view);
+  }
+});
+
+test("an idle PR cannot be classified before its selected content loads", async () => {
+  const snapshot: Snapshot = {
+    prs: [],
+    warnings: [],
+    models: {},
+    browse: {
+      kind: "pr",
+      page: 1,
+      total: 1,
+      items: [
+        {
+          number: 42,
+          title: "Change",
+          author: "alice",
+          url: "https://example.test/42",
+        },
+      ],
+    },
+  };
+  let resolvePreview!: (value: {
+    number: number;
+    head: string;
+    body: string;
+    files: { path: string; status: string; patch: string }[];
+  }) => void;
+  const waiting = new Promise<Parameters<typeof resolvePreview>[0]>(
+    (resolve) => {
+      resolvePreview = resolve;
+    },
+  );
+  const actions: unknown[] = [];
+  let view!: View;
+  await act(async () => {
+    view = await testRender(
+      <App
+        load={async () => snapshot}
+        loadPr={async () => waiting}
+        onQuit={() => {}}
+        onAction={async (action) => {
+          actions.push(action);
+          return "Saved";
+        }}
+      />,
+      { width: 140, height: 40 },
+    );
+    await Bun.sleep(30);
+  });
+  await view.flush();
+  try {
+    expect(view.captureCharFrame()).toContain("Loading description and files…");
+    expect(view.captureCharFrame()).not.toContain("Loading PR #42…");
+    await press(view, "RETURN");
+    expect(actions).toEqual([]);
+    resolvePreview({
+      number: 42,
+      head: "viewed-head",
+      body: "Review this rationale",
+      files: [
+        { path: "src/feature.ts", status: "modified", patch: "+feature" },
+      ],
+    });
+    await act(async () => {
+      await Bun.sleep(30);
+    });
+    await view.flush();
+    expect(view.captureCharFrame()).toContain("Review this rationale");
+    expect(view.captureCharFrame()).toContain("src/feature.ts");
+    await press(view, "RETURN");
+    expect(actions).toEqual([
+      { kind: "classify-target", number: 42, head: "viewed-head" },
     ]);
   } finally {
     await destroy(view);

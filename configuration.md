@@ -10,7 +10,7 @@ Required fields: `version: 1`, `slug`, `name`, GitHub `repository` (`owner/name`
 positive `scan_limit`, `core_team_reference`, `core_members`, `context`, `skills`
 (classification/review/verification), and `evidence` (`trusted_documents` paths and
 `omit_suffixes`). In this prototype `require_approval` is exactly classification,
-review, verification; `github_writes` and `repair_code` are false. Configuration is editable and needs no setup acceptance.
+review, verification; `github_writes` defaults to false and can be `"approval_required"`; `repair_code` remains false. Configuration is editable and needs no setup acceptance.
 
 Scanning excludes PR authors GitHub marks as `MEMBER` or `OWNER`, plus usernames
 in `core_members` (case-insensitive). Keep `core_members` for accounts that
@@ -70,3 +70,7 @@ assessment fingerprint to still match under that lock. Upstream revision checks
 remain in the shared engine. Configuration changes never advance a PR gate.
 
 During wizard analysis, Codex JSON events provide live activity, completed item counts and session identity. The UI shows elapsed time and time since the last event. Sessions persist in Codex history; the session ID can be opened after the run with `codex resume ID`. Progress uses event metadata only, never raw commands or agent output.
+
+## Approved GitHub operations
+
+`github_writes` accepts `false` (disabled) or `"approval_required"`. The latter permits only exact approved proposals through `smol apply`; it is not approval. Optional `scan_skills.issues` and `scan_skills.prs` point to repository-specific skill files. See [the workflow contract](docs/issue-workflow.md).
