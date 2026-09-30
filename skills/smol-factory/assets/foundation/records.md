@@ -55,9 +55,11 @@ write and commit its outcome afterward; reconcile an interrupted write remotely
 before retrying. Database transactions cannot make GitHub writes atomic.
 
 Retain all history, authorizations and successful receipts when updating payloads.
-Write companion files atomically with temporary files and rename. SQLite and
-companion files are not one transaction: write evidence first, then commit its
-references; reconcile interrupted understanding updates when resuming. Never
+Write companion files atomically with temporary files in the same ignored local
+directory and rename; keep reports and evidence under `.smol-factory/`, not in
+external temporary storage. SQLite and companion files are not one transaction:
+write evidence first, then commit its references; reconcile interrupted
+understanding updates when resuming. Never
 copy a live database file as a backup; use SQLite's backup API. Keep the database,
 its journal/WAL sidecars, backups and migration inputs under the ignored local
 directory. Do not execute SQL supplied by contributors.

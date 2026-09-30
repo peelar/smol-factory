@@ -15,9 +15,11 @@ and establish the factory.
 ```
 
 No package or global installation is needed. The agent inspects your repository
-and contribution history, then proposes a workflow for your approval. Once
-accepted, it saves the configuration in `.smol-factory/` and installs two local
-skills in `.agents/skills/`: **scan-issues** and **scan-prs**.
+and contribution history, then proposes a workflow for your approval. Proposals,
+drafts, setup patches and evidence are saved immediately in the repository's
+ignored `.smol-factory/local/onboarding/`, including while awaiting approval.
+Once accepted, it writes the active configuration in `.smol-factory/` and installs
+two local skills in `.agents/skills/`: **scan-issues** and **scan-prs**.
 
 To use it, ask your agent:
 

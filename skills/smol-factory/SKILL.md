@@ -23,6 +23,15 @@ installation, or agent adapter is needed.
    maintenance instructions. Preserve existing customizations.
 4. A setup request ends after setup. Continue into scans only when requested.
 
+## Keep factory work in the target repository
+
+Record all factory proposals, drafts, patches, research, validation reports and
+setup history under the target's `.smol-factory/`, including before acceptance.
+Follow onboarding's ignored `.smol-factory/local/onboarding/` layout for setup
+work; do not leave these artifacts in `/tmp`, `/private/tmp` or another external
+staging directory. Preserve them when setup is accepted or resumed. Drafts are
+not active policy. The two installed scan skills still belong in `.agents/skills/`.
+
 ## Policy and authority
 
 - Permissions, stage transitions, submission requirements, intake limits,

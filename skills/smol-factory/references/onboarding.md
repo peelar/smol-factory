@@ -12,6 +12,36 @@ local destination only if no suitable checkout is available. A fresh checkout
 must not overwrite existing work. Do not guess the maintained upstream from a
 fork's `origin`. Confirm materially ambiguous identity before provisioning.
 
+### Record setup work locally, before acceptance
+
+Once the target is resolved, add `/.smol-factory/local/` to its `.gitignore`
+before creating any local artifacts. Preserve existing ignore entries. This
+housekeeping and writing proposal artifacts are part of the setup request;
+neither activates policy nor authorizes GitHub writes.
+
+Keep all onboarding artifacts in
+`.smol-factory/local/onboarding/` inside the target repository:
+
+- `proposal.md`: proposed configuration, discovered rules, unresolved questions,
+  exact changes and acceptance status.
+- `draft/`: complete proposed files, mirroring their target-relative paths, such
+  as `draft/.smol-factory/policy.ts` and
+  `draft/.agents/skills/scan-issues/SKILL.md`. Keep draft `policy.accepted` null.
+- `setup.patch`: exact proposed setup changes, preserving existing customizations.
+- `evidence/`: nonsecret research, cited history and validation reports.
+
+Use this single directory for onboarding; resume its saved proposal when
+continuing setup. Preserve prior revisions and evidence when revising it. Do not store
+these artifacts in `/tmp`, `/private/tmp` or another external staging directory.
+Temporary source checkouts are allowed, but retain the research and resulting
+setup artifacts here. Keep secrets out of ignored files too.
+
+Show target-local artifact paths in progress updates and the setup summary.
+Before acceptance, leave active `.smol-factory/policy.ts` and installed scan
+skills untouched; an existing accepted setup remains authoritative.
+
+### Inspect repository and history
+
 Read committed default-branch documents, manifests, CI, source and tests. Sample
 issue templates/forms, contribution guides, architecture, release/support
 policy, existing labels and open work. Do not run project commands, hooks,
@@ -81,6 +111,9 @@ with the optional viewer is available, include its `viewer/.env.local` change
 and resolved target database path in the proposed file changes. Offer recommended answers
 for material unknowns. Do not ask the user to discover facts you can inspect.
 Wait for acceptance of this concrete draft before writing active policy.
+Validate the proposed files in the target-local `draft/` and record the results
+under `evidence/` before presenting the proposal. If setup pauses for acceptance,
+state that the proposal is saved locally and active setup has not been applied.
 
 ## 3. Lay down the foundations
 
@@ -112,8 +145,8 @@ repository identity or draft acceptance in active config. Record the actual
 maintainer acceptance statement and timestamp in `policy.accepted`. This is an
 honest conversation record, not tamper-proof authorization.
 
-Add `/.smol-factory/local/` to the target's `.gitignore` **before** creating local
-environment details or records. Preserve existing ignore entries. Keep secrets
+Confirm the `/.smol-factory/local/` ignore rule established in step 1 still covers
+local environment details and records before creating them. Keep secrets
 out of that document too; name their source and variables. Do not store a token
 merely because it was needed for setup. Keep portable source/version requirements
 in typed policy and private URLs/preferences in the ignored environment document.
@@ -180,11 +213,15 @@ declared `{{variable}}` substitutions; no secrets; complete local assets.
 
 Summarize what was established, rules learned, unresolved policy or environment
 gaps, and the next useful action. Distinguish discovered checks from checks run.
+Record the actual acceptance and setup outcome in the onboarding proposal;
+retain the draft, patch and evidence under `.smol-factory/local/onboarding/`.
 Do not start a scan unless requested. No GitHub writes were authorized by setup.
 
 ## Maintenance
 
 When requested, inspect fresh evidence and propose a precise policy/context diff.
+Save maintenance proposals, drafts, patches and evidence in the same target-local
+onboarding layout before acceptance; preserve the existing active configuration.
 Preserve accepted customizations. Policy changes and new autonomy grants need
 maintainer acceptance; a successful history does not grant autonomy. New grants
 specify operation, target kind, conditions, exact effects and acceptance. Prefer

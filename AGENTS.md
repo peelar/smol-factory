@@ -9,6 +9,10 @@ The generated target has one layout: `.smol-factory/policy.ts` owns typed policy
 Markdown holds context and stage references. `.agents/skills/` holds the two local
 scan skills. Ignored `.smol-factory/local/` holds environment details and item
 records. Keep all permissions and submission requirements in typed policy.
+All factory proposals, drafts, patches, reports and evidence stay in the target's
+`.smol-factory/`, including before acceptance. Onboarding artifacts belong in
+ignored `.smol-factory/local/onboarding/`; do not stage them in external temp
+directories or activate draft policy before maintainer acceptance.
 
 Policy is explicit agent guidance, not an enforcement boundary. All GitHub writes
 start approval-required. Show the exact proposed actions and text and obtain real
