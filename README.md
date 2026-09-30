@@ -100,12 +100,32 @@ submissions, policy or environments invalidate affected results and proposals;
 earlier evidence remains history. Proposed labels are distinct from public writes
 that actually succeeded.
 
+## View the board
+
+To view records, run from this source checkout:
+
+```sh
+cd viewer
+npm ci
+SMOL_FACTORY_DATABASE=/path/to/my-repository/.smol-factory/local/records.sqlite3 npm run dev
+```
+
+Open <http://127.0.0.1:8765>. The viewer uses Next.js, React and Tailwind CSS
+and requires Node.js 24+ for built-in SQLite access. It binds only to localhost;
+stop with Ctrl-C. Set `SMOL_FACTORY_DATABASE` in `viewer/.env.local` if preferred.
+Without an override it reads `.smol-factory/local/records.sqlite3` in this checkout.
+Use `npm run build` then `npm start` for production. Run `npm test` and
+`npm run typecheck` to check the app. Filter items and click cards for details;
+refresh rereads storage.
+The viewer supports custom stages and does not modify records or perform GitHub
+actions. It is not copied during onboarding.
+
 ## Work on these skills
 
 The bootstrap and its supporting documents live in
 [`skills/smol-factory/`](skills/smol-factory/SKILL.md). Local scan skills and
-foundation files are assets copied and tailored during onboarding. There is no
-application runtime or dependency installation for this repository.
+foundation files are assets copied and tailored during onboarding. The skills require no
+application runtime or dependency installation; `viewer/` is an optional local viewer.
 
 Check skill frontmatter, links, the onboarding copy map and typed assets when
 changing them. Use a trusted TypeScript compiler if already available; source-only

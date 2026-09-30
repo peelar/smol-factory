@@ -1,0 +1,9 @@
+@import "tailwindcss";
+
+@layer base {
+  :root { color-scheme: light; }
+  body { @apply m-0 bg-white font-sans text-sm text-neutral-950; }
+  button { @apply cursor-pointer disabled:cursor-wait disabled:opacity-50; }
+  :focus-visible { @apply outline-2 outline-offset-4 outline-black; }
+  dialog::backdrop { background: rgb(0 0 0 / 25%); }
+}
