@@ -1,138 +1,100 @@
 # smol-factory
 
-Skills for establishing a repository's issue and PR workflow. An agent learns
-how the project handles contributions, proposes stages and typed policy, then
-uses GitHub labels to communicate approved workflow status.
+Repository-local skills for handling GitHub issues and pull requests.
 
-## Establish a factory
+---
 
-Point your agent at the bootstrap skill and the repository you maintain:
+smol-factory gives your coding agent a workflow for triaging issues and reviewing
+pull requests using your repository's rules.
+
+To set it up, open your repository in your agent and send:
 
 ```text
 Read https://github.com/peelar/smol-factory/blob/main/skills/smol-factory/SKILL.md
-and establish the factory in /path/to/my-repository.
+and establish the factory.
 ```
 
-A GitHub repository URL also works as the target; the agent resolves its local
-checkout with you. It reads the skill and its assets from one source revision,
-inspects the target's documents, code and issue/PR history, and presents a concrete
-configuration for acceptance. The base experience requires no package, CLI or
-global skill installation.
+No package or global installation is needed. The agent inspects your repository
+and contribution history, then proposes a workflow for your approval. Once
+accepted, it saves the configuration in `.smol-factory/` and installs two local
+skills in `.agents/skills/`: **scan-issues** and **scan-prs**.
 
-Onboarding creates the repository's foundations and two local skills:
+To use it, ask your agent:
 
 ```text
-.agents/skills/
-  scan-issues/SKILL.md
-  scan-prs/SKILL.md
-.smol-factory/
-  policy.ts
-  policy.types.ts
-  records.types.ts
-  records.schema.sql
-  context.md
-  operations.md
-  records.md
-  understanding.template.md
-  stages/
-    validate.md
-    classify.md
-    review.md
-    verify.md
-    ready.md
-  local/                    ignored: environment and item memory
+Use scan-issues to triage open issues.
+Use scan-prs to review PR #123.
 ```
 
-Then ask your agent to use **scan-issues** or **scan-prs**. Both can scan a batch or
-work on a named item. They resume actionable work before admitting new submissions
-and run entirely from the target repository's local foundations. If your agent
-does not discover `.agents/skills`, ask it to read the corresponding `SKILL.md`
-directly. To revise the factory later, read the bootstrap skill again.
+Each scan assesses submissions against your rules, runs permitted verification,
+and records findings, blockers and next steps locally. Later scans resume from
+those records. Expect issues ready to work on, PRs ready for maintainer review,
+or an explanation of what still needs attention. GitHub changes are proposed
+for approval by default.
 
-## Repository policy
+## Features
 
-[`policy.ts`](skills/smol-factory/assets/foundation/policy.ts) is a declarative
-TypeScript configuration checked against
-[`FactoryPolicy`](skills/smol-factory/assets/foundation/policy.types.ts).
-It contains permissions, requirements, transitions, references, labels, intake,
-worker limits and verification scope. Markdown supplies context, preferences and
-assessment guidance. Every stage reads its assigned references.
+- Repository-specific stages, requirements, references, labels and permissions in
+  [`policy.ts`](skills/smol-factory/assets/foundation/policy.ts), checked against
+  [`FactoryPolicy`](skills/smol-factory/assets/foundation/policy.types.ts).
+  Markdown provides context and assessment guidance; each stage reads its references.
+- Default issue flow: validate → classify → verify when needed → ready to work on.
+  PR flow: validate → classify → review → verify → ready for maintainer acceptance.
+- Configurable intake and worker limits. Defaults: 10 items per scan, up to
+  3 workers, 1 reviewer and 1 verification environment concurrently. Work runs
+  serially without delegation. Team submissions and draft PRs are included by default.
+- Code execution only during permitted verification, with configured commands,
+  prerequisites, observed versions and cleanup. Scans do not repair contributor code.
+- Local SQLite records and per-item `understanding.md` preserve evidence, checks,
+  questions and next steps. Changes to submissions, policy or environments
+  invalidate affected results while retaining history. Approved GitHub summaries
+  share understanding across checkouts.
+- An optional, read-only kanban board for browsing recorded stages, results and proposals.
 
-Defaults are a proposal, tailored during onboarding:
+> [!NOTE]
+> Every GitHub write starts approval-required, including labels, comments, closure,
+> reviews and merges. The agent shows exact actions and text for approval. Accepting
+> setup does not approve GitHub changes. Autonomy requires an explicit, accepted
+> grant matching the operation, conditions and effects; successful runs cannot grant it.
+> Policy is agent guidance, not a security boundary or enforcement mechanism.
 
-| | Stages |
-| --- | --- |
-| Issues | Validate → classify → verify when needed → ready to be worked on |
-| PRs | Validate → classify → review → verify → ready for maintainer acceptance |
+## Use
 
-Start with 10 items per scan, at most 3 workers, 1 code reviewer and 1 verification
-environment concurrently. Assessment favors economical available models; review
-favors deeper reasoning. Without delegation, work runs serially. Team submissions
-and draft PRs are included; repository-specific exclusions are explicit.
-
-The maintainer can redefine stages, references, limits and rules. For example,
-requiring a linked issue belongs in that repository's typed requirements, not the
-base skill. Historical decisions inform proposed rules; they do not automatically
-become policy. Verification names commands, environment prerequisites, observed
-software versions and cleanup. Code runs only in permitted verification.
-
-## Public actions and memory
-
-**Every GitHub write starts with `requireApproval`**, including labels, comments,
-closure, reviews and merges. The agent shows exact proposed actions and wording
-before acting. Accepting local setup does not approve label creation or any other
-GitHub change. Later autonomy requires explicit grants for particular operations,
-conditions and effects; successful assessments cannot grant it automatically.
-
-Typed policy makes instructions precise. It is **agent guidance, not a security
-boundary**: there is no write broker, custom executor or guarantee against an agent
-bypassing instructions. Agents use ordinary GitHub tools and confront their
-actions with the accepted policy.
-
-Structured item records live in ignored `.smol-factory/local/records.sqlite3`,
-accessed with an available SQLite tool; no dependency install is needed. The
-database preserves nested typed records, revisions and transactional checkpoints.
-Existing JSON files are imported and verified before being archived locally.
-Each issue/PR also has `understanding.md`: intent,
-evidence, hypotheses, related history, checks, versions, questions and next steps.
-Approved GitHub summaries carry shareable understanding across checkouts. Changed
-submissions, policy or environments invalidate affected results and proposals;
-earlier evidence remains history. Proposed labels are distinct from public writes
-that actually succeeded.
-
-## View the board
+Read the [bootstrap skill](skills/smol-factory/SKILL.md) directly—no package, CLI,
+global installation or application runtime is required. Scans use an available
+SQLite tool. Environment details and item records stay in ignored
+`.smol-factory/local/`; keep secrets out of Git, prompts, reports and screenshots.
 
 To view records, run from this source checkout:
 
 ```sh
 cd viewer
 npm ci
-SMOL_FACTORY_DATABASE=/path/to/my-repository/.smol-factory/local/records.sqlite3 npm run dev
+npm run dev
 ```
 
 Open <http://127.0.0.1:8765>. The viewer uses Next.js, React and Tailwind CSS
 and requires Node.js 24+ for built-in SQLite access. It binds only to localhost;
-stop with Ctrl-C. Set `SMOL_FACTORY_DATABASE` in `viewer/.env.local` if preferred.
-Without an override it reads `.smol-factory/local/records.sqlite3` in this checkout.
+stop with Ctrl-C. Onboarding creates `viewer/.env.local` from `viewer/.env.example`
+in an available local source checkout and fills in your repository’s database path.
+If you downloaded the viewer afterward, copy `.env.example` to `.env.local` and
+set its database path once. The default points to this checkout’s database.
 Use `npm run build` then `npm start` for production. Run `npm test` and
 `npm run typecheck` to check the app. Filter items and click cards for details;
 refresh rereads storage.
 The viewer supports custom stages and does not modify records or perform GitHub
 actions. It is not copied during onboarding.
 
-## Work on these skills
+## Contribute
 
-The bootstrap and its supporting documents live in
-[`skills/smol-factory/`](skills/smol-factory/SKILL.md). Local scan skills and
-foundation files are assets copied and tailored during onboarding. The skills require no
-application runtime or dependency installation; `viewer/` is an optional local viewer.
+The [bootstrap skill](skills/smol-factory/SKILL.md) and its assets live in
+`skills/smol-factory/`. Preserve maintainer customizations and local evidence.
+Check frontmatter, links, destination references, the onboarding copy map and
+TypeScript contracts when changing assets. Use a trusted compiler if available;
+validation must not execute target or contributor code. Forward-test substantial
+workflow changes in temporary onboarding/scan fixtures without GitHub writes.
 
-Check skill frontmatter, links, the onboarding copy map and typed assets when
-changing them. Use a trusted TypeScript compiler if already available; source-only
-validation does not execute the target project's code. Test substantial workflow
-changes with an isolated onboarding/scan scenario before publishing.
-
-The structure draws on [Matt Pocock's skills](https://github.com/mattpocock/skills)
+Inspired by [Matt Pocock's skills](https://github.com/mattpocock/skills)
 and [Lauren's pstack](https://github.com/cursor/plugins/tree/main/pstack).
 
 [MIT license](LICENSE)

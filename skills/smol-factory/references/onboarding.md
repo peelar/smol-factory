@@ -76,7 +76,9 @@ become GitHub status until their approved write succeeds.
 
 Show a concise proposed configuration, the consequential discovered rules,
 unresolved questions, verification readiness, exact file changes and instruction
-pointer before asking the maintainer to accept it. Offer recommended answers
+pointer before asking the maintainer to accept it. When a local source checkout
+with the optional viewer is available, include its `viewer/.env.local` change
+and resolved target database path in the proposed file changes. Offer recommended answers
 for material unknowns. Do not ask the user to discover facts you can inspect.
 Wait for acceptance of this concrete draft before writing active policy.
 
@@ -123,6 +125,29 @@ is agent guidance and public writes start approval-required. Preserve all
 surrounding instructions; do not install the bootstrap skill globally or copy it
 into the target. Explain how to refresh skill discovery or read a local scan
 skill directly if the host does not discover `.agents/skills`.
+
+### Configure an available local viewer
+
+If the bootstrap source is a persistent local checkout containing
+`../../../viewer/.env.example` (relative to this reference), copy that template
+into the same viewer directory as `.env.local`. Replace `SMOL_FACTORY_DATABASE`
+with the resolved absolute target repository path followed by
+`/.smol-factory/local/records.sqlite3`. This path is derived during onboarding;
+the maintainer need not supply it at launch. Quote the dotenv value and escape
+backslashes, double quotes and dollar signs so paths containing spaces or dotenv
+interpolation characters remain literal. Keep `.env.local` ignored in the source
+checkout; verify the ignore rule before writing it. Preserve other environment
+entries and existing customized database paths. If an existing value names a
+different target, report it and obtain an explicit selection before switching.
+
+This configuration belongs to the source viewer, not the target's scan assets.
+Do not copy the viewer into the target, install its dependencies or launch it
+during onboarding. A remote source or disposable temporary source checkout has
+no persistent viewer to configure: report that fact and explain that a later
+local viewer checkout needs `.env.example` copied to `.env.local` with the
+resolved database path. Include the configured viewer location in the setup
+summary when available. Starting that viewer then requires only `npm run dev`
+after its dependencies have been installed.
 
 ## 4. Check and finish
 
