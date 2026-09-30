@@ -58,42 +58,6 @@ for approval by default.
 > grant matching the operation, conditions and effects; successful runs cannot grant it.
 > Policy is agent guidance, not a security boundary or enforcement mechanism.
 
-## Use
-
-Read the [bootstrap skill](skills/smol-factory/SKILL.md) directly—no package, CLI,
-global installation or application runtime is required. Scans use an available
-SQLite tool. Environment details and item records stay in ignored
-`.smol-factory/local/`; keep secrets out of Git, prompts, reports and screenshots.
-
-To view records, run from this source checkout:
-
-```sh
-cd viewer
-npm ci
-npm run dev
-```
-
-Open <http://127.0.0.1:8765>. The viewer uses Next.js, React and Tailwind CSS
-and requires Node.js 24+ for built-in SQLite access. It binds only to localhost;
-stop with Ctrl-C. Onboarding creates `viewer/.env.local` from `viewer/.env.example`
-in an available local source checkout and fills in your repository’s database path.
-If you downloaded the viewer afterward, copy `.env.example` to `.env.local` and
-set its database path once. The default points to this checkout’s database.
-Use `npm run build` then `npm start` for production. Run `npm test` and
-`npm run typecheck` to check the app. Filter items and click cards for details;
-refresh rereads storage.
-The viewer supports custom stages and does not modify records or perform GitHub
-actions. It is not copied during onboarding.
-
-## Contribute
-
-The [bootstrap skill](skills/smol-factory/SKILL.md) and its assets live in
-`skills/smol-factory/`. Preserve maintainer customizations and local evidence.
-Check frontmatter, links, destination references, the onboarding copy map and
-TypeScript contracts when changing assets. Use a trusted compiler if available;
-validation must not execute target or contributor code. Forward-test substantial
-workflow changes in temporary onboarding/scan fixtures without GitHub writes.
-
 Inspired by [Matt Pocock's skills](https://github.com/mattpocock/skills)
 and [Lauren's pstack](https://github.com/cursor/plugins/tree/main/pstack).
 
